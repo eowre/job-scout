@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -37,12 +37,35 @@ class Job(Base):
     contact_info = Column(Text, default="")
     notes = Column(Text, default="")
     resume_id = Column(Integer, nullable=True)
-    # Scraper fields
-    ats_job_id = Column(String, nullable=True, index=True)  # dedup key for scraped jobs
-    source = Column(String, default="manual")               # "manual" | "scraped"
-    job_url = Column(String, nullable=True)                 # direct link from scraper
+    ats_job_id = Column(String, nullable=True, index=True)
+    source = Column(String, default="manual")
+    job_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DiscoveredJob(Base):
+    """Every job found by the scraper lands here before any user action."""
+    __tablename__ = "discovered_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ats_job_id = Column(String, unique=True, nullable=False, index=True)
+    company = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    location = Column(String, default="")
+    department = Column(String, default="")
+    # Raw description fetched from ATS
+    raw_description = Column(Text, default="")
+    # Claude-parsed fields (populated async after discovery)
+    parsed_summary = Column(Text, nullable=True)
+    compensation = Column(String, nullable=True)
+    responsibilities = Column(Text, nullable=True)  # JSON array
+    parsed_at = Column(DateTime, nullable=True)
+    # Pipeline promotion
+    added_to_pipeline = Column(Boolean, default=False)
+    pipeline_job_id = Column(Integer, nullable=True)
+    discovered_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ScrapeRun(Base):

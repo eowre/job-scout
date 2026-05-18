@@ -152,6 +152,22 @@
     .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
     .company-search { margin-bottom: 12px; }
 
+    /* Found Jobs page */
+    .fj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .fj-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px; cursor: pointer; transition: border-color 0.15s; }
+    .fj-card:hover { border-color: #818cf8; }
+    .fj-card-title { font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; line-height: 1.3; }
+    .fj-card-company { font-size: 13px; color: #818cf8; margin-bottom: 8px; }
+    .fj-card-meta { font-size: 12px; color: #64748b; display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    .fj-card-summary { font-size: 13px; color: #94a3b8; line-height: 1.5; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .fj-card-comp { font-size: 12px; color: #4ade80; background: #14532d; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
+    .fj-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .badge-parsed { background: #1e2d1e; color: #4ade80; }
+    .badge-unparsed { background: #2d2000; color: #fbbf24; }
+    .fj-modal-resp li { padding: 5px 0; font-size: 13px; color: #cbd5e1; border-bottom: 1px solid #1e2235; display: flex; gap: 8px; list-style: none; }
+    .fj-modal-resp li:last-child { border-bottom: none; }
+    .fj-modal-resp li::before { content: "→"; color: #818cf8; flex-shrink: 0; }
+
     /* Utilities */
     .flex { display: flex; }
     .items-center { align-items: center; }
@@ -212,6 +228,10 @@
     <div class="logo">Job<span>Scout</span></div>
     <button class="nav-btn" :class="{active: page==='scout'}" @click="page='scout'; loadScout()">
       <span class="nav-icon">🔭</span> Scout
+    </button>
+    <button class="nav-btn" :class="{active: page==='found'}" @click="page='found'; loadFoundJobs()">
+      <span class="nav-icon">🔍</span> Found Jobs
+      <span x-show="foundJobs.total > 0" x-text="foundJobs.total" style="margin-left:auto; background:#252836; border-radius:10px; padding:1px 7px; font-size:11px; color:#818cf8;"></span>
     </button>
     <button class="nav-btn" :class="{active: page==='analyze'}" @click="page='analyze'">
       <span class="nav-icon">🎯</span> Analyze
@@ -317,6 +337,118 @@
               </label>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOUND JOBS PAGE -->
+    <div x-show="page==='found'">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <div class="page-title">Found Jobs</div>
+          <div class="page-sub">All jobs discovered by the scraper — add any to your pipeline</div>
+        </div>
+        <div class="flex gap-2 items-center">
+          <span class="text-sm text-muted" x-text="foundJobs.total + ' total'"></span>
+          <button class="btn btn-ghost btn-sm" @click="loadFoundJobs()">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="card mb-4" style="padding: 16px 20px;">
+        <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
+          <input x-model="foundJobs.q" @input.debounce.400ms="loadFoundJobs()" placeholder="Search title or company…" style="flex:1; min-width:200px; margin-bottom:0;" />
+          <select x-model="foundJobs.filterAdded" @change="loadFoundJobs()" style="width:auto; margin-bottom:0;">
+            <option value="">All</option>
+            <option value="false">Not in Pipeline</option>
+            <option value="true">In Pipeline</option>
+          </select>
+          <span class="text-xs text-muted" x-show="foundJobs.loading">Loading…</span>
+        </div>
+      </div>
+
+      <!-- Job cards -->
+      <div class="fj-grid" x-show="!foundJobs.loading && foundJobs.jobs.length > 0">
+        <template x-for="job in foundJobs.jobs" :key="job.id">
+          <div class="fj-card" @click="openFoundJob(job)">
+            <div class="flex justify-between items-start mb-1">
+              <div class="fj-card-title" x-text="job.title"></div>
+              <span class="badge text-xs ml-2" :class="job.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="job.parsed_at ? '✓ Parsed' : '⏳ Raw'" style="flex-shrink:0;"></span>
+            </div>
+            <div class="fj-card-company" x-text="job.company"></div>
+            <div class="fj-card-meta">
+              <span x-show="job.location" x-text="'📍 ' + job.location"></span>
+              <span x-show="job.department" x-text="job.department"></span>
+              <span x-text="job.discovered_at ? new Date(job.discovered_at).toLocaleDateString() : ''"></span>
+            </div>
+            <div x-show="job.compensation" class="fj-card-comp" x-text="'💰 ' + job.compensation"></div>
+            <div class="fj-card-summary" x-text="job.parsed_summary || job.raw_description || 'No description available.'"></div>
+            <div class="fj-card-actions" @click.stop>
+              <a :href="job.url" target="_blank" class="btn btn-ghost btn-sm">🔗 View</a>
+              <button class="btn btn-sm" :class="job.added_to_pipeline ? 'btn-ghost' : 'btn-primary'"
+                @click="promoteFoundJob(job)"
+                :disabled="job.added_to_pipeline"
+                x-text="job.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+      <div class="text-muted text-sm mt-4" x-show="!foundJobs.loading && foundJobs.jobs.length === 0">
+        No jobs found. Run a scan from the Scout tab to discover jobs.
+      </div>
+
+      <!-- Load more -->
+      <div class="flex justify-center mt-4" x-show="foundJobs.jobs.length < foundJobs.total && !foundJobs.loading">
+        <button class="btn btn-ghost" @click="loadMoreFoundJobs()">Load More</button>
+      </div>
+
+      <!-- Job detail modal -->
+      <div x-show="foundJobs.selected" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;" @click.self="foundJobs.selected=null">
+        <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:16px;padding:28px;max-width:680px;width:100%;max-height:85vh;overflow-y:auto;" x-show="foundJobs.selected">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <div style="font-size:18px;font-weight:700;color:#f1f5f9;" x-text="foundJobs.selected?.title"></div>
+              <div style="font-size:14px;color:#818cf8;margin-top:4px;" x-text="foundJobs.selected?.company"></div>
+            </div>
+            <button @click="foundJobs.selected=null" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+          </div>
+
+          <div class="flex gap-2 items-center mb-3" style="flex-wrap:wrap;">
+            <span x-show="foundJobs.selected?.location" class="tag" x-text="'📍 ' + foundJobs.selected?.location"></span>
+            <span x-show="foundJobs.selected?.department" class="tag" x-text="foundJobs.selected?.department"></span>
+            <span x-show="foundJobs.selected?.compensation" class="fj-card-comp" x-text="'💰 ' + foundJobs.selected?.compensation"></span>
+            <span class="badge" :class="foundJobs.selected?.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="foundJobs.selected?.parsed_at ? 'Parsed' : 'Not yet parsed'"></span>
+          </div>
+
+          <div x-show="foundJobs.selected?.parsed_summary">
+            <div class="section-title">Summary</div>
+            <p style="font-size:13px;color:#cbd5e1;line-height:1.6;margin-bottom:16px;" x-text="foundJobs.selected?.parsed_summary"></p>
+          </div>
+
+          <div x-show="foundJobs.selected?.responsibilities?.length > 0">
+            <div class="section-title">Key Responsibilities</div>
+            <ul class="fj-modal-resp mb-4">
+              <template x-for="r in (foundJobs.selected?.responsibilities || [])" :key="r">
+                <li x-text="r"></li>
+              </template>
+            </ul>
+          </div>
+
+          <div x-show="!foundJobs.selected?.parsed_at && foundJobs.selected?.raw_description">
+            <div class="section-title">Raw Description</div>
+            <div style="background:#0f1117;border:1px solid #2d3148;border-radius:8px;padding:14px;font-size:13px;color:#94a3b8;line-height:1.6;max-height:200px;overflow-y:auto;white-space:pre-wrap;margin-bottom:16px;" x-text="foundJobs.selected?.raw_description"></div>
+          </div>
+
+          <div class="flex gap-2 mt-2">
+            <a :href="foundJobs.selected?.url" target="_blank" class="btn btn-ghost btn-sm">🔗 Open Job Posting</a>
+            <button class="btn btn-sm btn-ghost" @click="reparseFoundJob(foundJobs.selected)" x-show="foundJobs.selected?.raw_description">⚙ Re-parse</button>
+            <button class="btn btn-sm" :class="foundJobs.selected?.added_to_pipeline ? 'btn-ghost' : 'btn-primary'"
+              @click="promoteFoundJob(foundJobs.selected)"
+              :disabled="foundJobs.selected?.added_to_pipeline"
+              x-text="foundJobs.selected?.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -846,6 +978,17 @@ function app() {
       triggering: false,
     },
 
+    // Found Jobs
+    foundJobs: {
+      jobs: [],
+      total: 0,
+      loading: false,
+      q: '',
+      filterAdded: '',
+      skip: 0,
+      selected: null,
+    },
+
     // Toast
     toast: { show: false, msg: '' },
 
@@ -853,6 +996,7 @@ function app() {
       await this.loadResumes();
       await this.loadJobs();
       await this.loadScout();
+      await this.loadFoundJobs();
     },
 
     // ── Scout ─────────────────────────────────────────────────────────────────
@@ -895,6 +1039,7 @@ function app() {
             clearInterval(poll);
             await this.loadJobs();
             await this.loadScoutRuns();
+            await this.loadFoundJobs();
             this.showToast(`Scan done — ${this.scout.status.last_result.jobs_new ?? 0} new job(s)`);
           }
         }, 4000);
@@ -902,6 +1047,56 @@ function app() {
         this.showToast('Error: ' + e.message);
       }
       this.scout.triggering = false;
+    },
+
+    // ── Found Jobs ────────────────────────────────────────────────────────────
+    async loadFoundJobs() {
+      this.foundJobs.loading = true;
+      this.foundJobs.skip = 0;
+      try {
+        const params = new URLSearchParams({ skip: 0, limit: 50 });
+        if (this.foundJobs.q) params.set('q', this.foundJobs.q);
+        if (this.foundJobs.filterAdded !== '') params.set('added', this.foundJobs.filterAdded);
+        const res = await fetch('/found-jobs?' + params);
+        const data = await res.json();
+        this.foundJobs.jobs = data.jobs;
+        this.foundJobs.total = data.total;
+      } finally {
+        this.foundJobs.loading = false;
+      }
+    },
+
+    async loadMoreFoundJobs() {
+      const next = this.foundJobs.skip + 50;
+      const params = new URLSearchParams({ skip: next, limit: 50 });
+      if (this.foundJobs.q) params.set('q', this.foundJobs.q);
+      if (this.foundJobs.filterAdded !== '') params.set('added', this.foundJobs.filterAdded);
+      const res = await fetch('/found-jobs?' + params);
+      const data = await res.json();
+      this.foundJobs.jobs.push(...data.jobs);
+      this.foundJobs.skip = next;
+    },
+
+    openFoundJob(job) {
+      this.foundJobs.selected = job;
+    },
+
+    async promoteFoundJob(job) {
+      if (job.added_to_pipeline) return;
+      const res = await fetch(`/found-jobs/${job.id}/promote`, { method: 'POST' });
+      if (!res.ok) { this.showToast('Promote failed'); return; }
+      const data = await res.json();
+      job.added_to_pipeline = true;
+      job.pipeline_job_id = data.pipeline_job_id;
+      if (this.foundJobs.selected?.id === job.id) this.foundJobs.selected = { ...job };
+      await this.loadJobs();
+      this.showToast('Added to pipeline!');
+    },
+
+    async reparseFoundJob(job) {
+      const res = await fetch(`/found-jobs/${job.id}/reparse`, { method: 'POST' });
+      if (!res.ok) { this.showToast('Re-parse failed'); return; }
+      this.showToast('Re-parsing in background — refresh in a moment.');
     },
 
     async toggleCompany(co, enabled) {

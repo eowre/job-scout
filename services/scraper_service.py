@@ -2,17 +2,18 @@
 scraper_service.py — Orchestrates scheduled and on-demand job scans.
 
 Triggered by:
-  • APScheduler IntervalTrigger  (every CHECK_INTERVAL_HOURS hours)
-  • APScheduler CronTrigger      (08:00 and 20:00 UTC daily minimum)
-  • POST /scrape/trigger          (manual on-demand from UI or external cron)
+  • asyncio interval loop  (every CHECK_INTERVAL_HOURS hours)
+  • asyncio cron loop      (08:00 and 20:00 UTC daily minimum)
+  • POST /scrape/trigger   (manual on-demand from UI)
 """
+import asyncio
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from database import SessionLocal, Job, ScrapeRun
+from database import SessionLocal, DiscoveredJob, ScrapeRun
 from services.scraper import scrape_all
 from services.notifier import send_alert
 
@@ -20,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 COMPANIES_PATH = Path(__file__).parent.parent / "companies.json"
 
-# In-process state — safe because asyncio is single-threaded
 _running = False
 _last_run: Optional[datetime] = None
 _last_result: dict = {}
@@ -38,6 +38,31 @@ def get_status() -> dict:
         "last_run": _last_run.isoformat() if _last_run else None,
         "last_result": _last_result,
     }
+
+
+async def _parse_and_save(discovered_id: int, title: str, company: str, raw_description: str):
+    """Parse a single job with Claude haiku and persist the results."""
+    from ai.parser import parse_job
+    result = await parse_job(title, company, raw_description)
+    if not result:
+        return
+
+    db = SessionLocal()
+    try:
+        job = db.query(DiscoveredJob).filter(DiscoveredJob.id == discovered_id).first()
+        if not job:
+            return
+        job.parsed_summary = result.get("parsed_summary")
+        job.compensation = result.get("compensation")
+        responsibilities = result.get("responsibilities", [])
+        job.responsibilities = json.dumps(responsibilities) if responsibilities else None
+        job.parsed_at = datetime.utcnow()
+        db.commit()
+        logger.info(f"  Parsed: {title} @ {company}")
+    except Exception as exc:
+        logger.warning(f"  Parse save failed for '{title}': {exc}")
+    finally:
+        db.close()
 
 
 async def run_scan() -> dict:
@@ -59,31 +84,29 @@ async def run_scan() -> dict:
 
         db = SessionLocal()
         new_count = 0
+        new_discovered: list[tuple[int, str, str, str]] = []
         try:
             for job in all_jobs:
-                existing = db.query(Job).filter(Job.ats_job_id == job.job_id).first()
+                existing = db.query(DiscoveredJob).filter(
+                    DiscoveredJob.ats_job_id == job.job_id
+                ).first()
                 if existing:
                     continue
 
-                meta = {}
-                if job.location:
-                    meta["location"] = job.location
-                if job.department:
-                    meta["department"] = job.department
-
-                db_job = Job(
-                    title=job.title,
-                    company=job.company,
-                    jd_text="",
-                    stage="Saved",
-                    source="scraped",
+                db_job = DiscoveredJob(
                     ats_job_id=job.job_id,
-                    job_url=job.url,
-                    contact_info=json.dumps(meta) if meta else "",
+                    company=job.company,
+                    title=job.title,
+                    url=job.url,
+                    location=job.location,
+                    department=job.department,
+                    raw_description=job.description,
                 )
                 db.add(db_job)
                 db.commit()
+                db.refresh(db_job)
                 new_count += 1
+                new_discovered.append((db_job.id, job.title, job.company, job.description))
                 logger.info(f"  + {job.title} @ {job.company}")
 
                 try:
@@ -103,13 +126,17 @@ async def run_scan() -> dict:
         finally:
             db.close()
 
+        # Fire off parsing as background tasks — don't block the scan result
+        for (did, title, company, desc) in new_discovered:
+            asyncio.create_task(_parse_and_save(did, title, company, desc))
+
         _last_run = datetime.utcnow()
         _last_result = {
             "companies_scraped": len(companies),
             "jobs_found": len(all_jobs),
             "jobs_new": new_count,
         }
-        logger.info(f"Scan complete — {new_count} new job(s)")
+        logger.info(f"Scan complete — {new_count} new job(s), {new_count} parsing task(s) queued")
         logger.info("=" * 50)
         return _last_result
 

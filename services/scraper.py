@@ -1,11 +1,11 @@
 """
-scraper.py — Async multi-ATS job scraper.
+scraper.py — Async multi-ATS job scraper with description fetching.
 
 Supported ATS platforms:
-  • Greenhouse  https://boards.greenhouse.io/embed/job_board/json?for={id}
-  • Lever       https://api.lever.co/v0/postings/{id}?mode=json
-  • Ashby       https://jobs.ashbyhq.com/api/non-user-graphql  (GraphQL)
-  • Generic     BeautifulSoup HTML fallback for custom career pages
+  • Greenhouse  — list via embed API, description via boards-api v1
+  • Lever       — list + description in single call (?mode=json)
+  • Ashby       — GraphQL (includes descriptionHtml)
+  • Generic     — BeautifulSoup HTML fallback
 """
 import asyncio
 import logging
@@ -52,9 +52,30 @@ def _matches(title: str, description: str = "") -> bool:
     return False
 
 
+def _strip_html(html: str) -> str:
+    """Convert HTML to plain text."""
+    if not html:
+        return ""
+    return BeautifulSoup(html, "lxml").get_text(" ", strip=True)
+
+
 # ---------------------------------------------------------------------------
 # Greenhouse
 # ---------------------------------------------------------------------------
+async def _fetch_greenhouse_description(
+    session: aiohttp.ClientSession, co_id: str, numeric_id: int
+) -> str:
+    url = f"https://boards-api.greenhouse.io/v1/boards/{co_id}/jobs/{numeric_id}"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)) as resp:
+            if resp.status != 200:
+                return ""
+            data = await resp.json(content_type=None)
+            return _strip_html(data.get("content", ""))
+    except Exception:
+        return ""
+
+
 async def _scrape_greenhouse(session: aiohttp.ClientSession, company: dict) -> List[ScrapedJob]:
     co_id   = company.get("id", "")
     co_name = company["name"]
@@ -67,6 +88,9 @@ async def _scrape_greenhouse(session: aiohttp.ClientSession, company: dict) -> L
             data = await resp.json(content_type=None)
 
         jobs = []
+        fetch_tasks = []
+        raw_jobs = []
+
         for j in data.get("jobs", []):
             title = j.get("title", "")
             if not _matches(title):
@@ -74,15 +98,28 @@ async def _scrape_greenhouse(session: aiohttp.ClientSession, company: dict) -> L
             dept = ""
             if j.get("departments"):
                 dept = j["departments"][0].get("name", "")
+            numeric_id = j.get("id", "")
+            raw_jobs.append((j, dept, numeric_id))
+            fetch_tasks.append(_fetch_greenhouse_description(session, co_id, numeric_id))
+
+        if not raw_jobs:
+            return []
+
+        descriptions = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        for (j, dept, numeric_id), desc in zip(raw_jobs, descriptions):
+            title = j.get("title", "")
             jobs.append(ScrapedJob(
-                job_id     = f"gh_{co_id}_{j.get('id', '')}",
-                company    = co_name,
-                title      = title,
-                url        = j.get("absolute_url", ""),
-                location   = j.get("location", {}).get("name", ""),
-                department = dept,
+                job_id      = f"gh_{co_id}_{numeric_id}",
+                company     = co_name,
+                title       = title,
+                url         = j.get("absolute_url", ""),
+                location    = j.get("location", {}).get("name", ""),
+                department  = dept,
+                description = desc if isinstance(desc, str) else "",
             ))
         return jobs
+
     except Exception as exc:
         logger.warning(f"[{co_name}] Greenhouse error: {exc}")
         return []
@@ -104,20 +141,32 @@ async def _scrape_lever(session: aiohttp.ClientSession, company: dict) -> List[S
 
         jobs = []
         for j in data:
-            title  = j.get("text", "")
+            title = j.get("text", "")
             if not _matches(title):
                 continue
+
+            # Lever returns plain-text description and structured lists in the same call
+            description = j.get("descriptionPlain", "").strip()
+            if not description:
+                lists = j.get("lists", [])
+                description = "\n\n".join(
+                    f"{section['text']}\n{_strip_html(section.get('content', ''))}"
+                    for section in lists
+                ).strip()
+
             job_id = j.get("id", "")
             cats   = j.get("categories", {})
             jobs.append(ScrapedJob(
-                job_id     = f"lv_{co_id}_{job_id}",
-                company    = co_name,
-                title      = title,
-                url        = j.get("hostedUrl", f"https://jobs.lever.co/{co_id}/{job_id}"),
-                location   = cats.get("location", ""),
-                department = cats.get("team", ""),
+                job_id      = f"lv_{co_id}_{job_id}",
+                company     = co_name,
+                title       = title,
+                url         = j.get("hostedUrl", f"https://jobs.lever.co/{co_id}/{job_id}"),
+                location    = cats.get("location", ""),
+                department  = cats.get("team", ""),
+                description = description,
             ))
         return jobs
+
     except Exception as exc:
         logger.warning(f"[{co_name}] Lever error: {exc}")
         return []
@@ -132,7 +181,13 @@ query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
     organizationHostedJobsPageName: $organizationHostedJobsPageName
   ) {
     jobPostings {
-      id title locationName departmentName isRemote externalLink
+      id
+      title
+      locationName
+      departmentName
+      isRemote
+      externalLink
+      descriptionHtml
     }
   }
 }
@@ -165,14 +220,16 @@ async def _scrape_ashby(session: aiohttp.ClientSession, company: dict) -> List[S
             if not location and j.get("isRemote"):
                 location = "Remote"
             jobs.append(ScrapedJob(
-                job_id     = f"ash_{co_id}_{job_id}",
-                company    = co_name,
-                title      = title,
-                url        = j.get("externalLink") or f"https://jobs.ashbyhq.com/{co_id}/{job_id}",
-                location   = location,
-                department = j.get("departmentName", ""),
+                job_id      = f"ash_{co_id}_{job_id}",
+                company     = co_name,
+                title       = title,
+                url         = j.get("externalLink") or f"https://jobs.ashbyhq.com/{co_id}/{job_id}",
+                location    = location,
+                department  = j.get("departmentName", ""),
+                description = _strip_html(j.get("descriptionHtml", "")),
             ))
         return jobs
+
     except Exception as exc:
         logger.warning(f"[{co_name}] Ashby error: {exc}")
         return []
@@ -209,6 +266,9 @@ async def _scrape_generic(session: aiohttp.ClientSession, company: dict) -> List
         parsed = urlparse(careers_url)
         base   = f"{parsed.scheme}://{parsed.netloc}"
 
+        # Grab any visible page text as a rough description
+        page_text = soup.get_text(" ", strip=True)[:3000]
+
         seen_urls: set = set()
         jobs: List[ScrapedJob] = []
 
@@ -233,13 +293,15 @@ async def _scrape_generic(session: aiohttp.ClientSession, company: dict) -> List
 
             slug = hash(text + href) % 10_000_000
             jobs.append(ScrapedJob(
-                job_id  = f"gen_{co_name.lower().replace(' ', '_')}_{slug}",
-                company = co_name,
-                title   = text,
-                url     = href,
+                job_id      = f"gen_{co_name.lower().replace(' ', '_')}_{slug}",
+                company     = co_name,
+                title       = text,
+                url         = href,
+                description = page_text,
             ))
 
         return jobs
+
     except Exception as exc:
         logger.warning(f"[{co_name}] Generic scrape error: {exc}")
         return []
