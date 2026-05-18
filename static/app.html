@@ -190,9 +190,11 @@
     .ats-lever      { background: #431407; color: #fb923c; }
     .ats-ashby      { background: #2e1065; color: #a78bfa; }
     .ats-generic    { background: #1e2d3d; color: #94a3b8; }
-    .val-row { display: grid; grid-template-columns: 180px 72px 1fr 56px 20px; align-items: center; gap: 12px; padding: 8px 6px; border-bottom: 1px solid #1e2235; font-size: 12px; }
+    .val-row { display: grid; grid-template-columns: 160px 68px 1fr 52px 100px 18px; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #1e2235; font-size: 12px; }
     .val-row:last-child { border-bottom: none; }
     .val-row:hover { background: #1a1d27; border-radius: 6px; }
+    .val-row.val-err { background: rgba(248,113,113,0.04); }
+    .val-row.val-warn { background: rgba(251,191,36,0.04); }
     .val-name { font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .val-url { color: #60a5fa; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; font-family: monospace; font-size: 11px; }
     .val-url:hover { text-decoration: underline; }
@@ -200,7 +202,13 @@
     .val-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .val-dot-on  { background: #4ade80; }
     .val-dot-off { background: #475569; }
-    .val-header { display: grid; grid-template-columns: 180px 72px 1fr 56px 20px; gap: 12px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
+    .val-header { display: grid; grid-template-columns: 160px 68px 1fr 52px 100px 18px; gap: 10px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
+    .val-status { font-size: 11px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    .val-status-ok      { color: #4ade80; }
+    .val-status-empty   { color: #fbbf24; }
+    .val-status-error   { color: #f87171; }
+    .val-status-timeout { color: #fb923c; }
+    .val-status-pending { color: #475569; }
 
     /* Utilities */
     .flex { display: flex; }
@@ -469,26 +477,45 @@
             <!-- Company Validation Panel -->
             <div class="validation-panel">
               <div class="flex justify-between items-center mb-3">
-                <div class="analytics-col-title" style="margin-bottom:0;">Company Scrape Validation</div>
-                <span class="text-xs text-muted" x-text="(scout.companies || []).length + ' companies configured'"></span>
+                <div>
+                  <div class="analytics-col-title" style="margin-bottom:2px;">Company Scrape Validation</div>
+                  <div class="text-xs text-muted" x-text="(scout.companies || []).length + ' companies configured'"></div>
+                </div>
+                <button class="btn btn-sm" :class="foundJobs.validating ? 'btn-ghost' : 'btn-primary'"
+                  @click="validateCompanies()" :disabled="foundJobs.validating">
+                  <span x-show="!foundJobs.validating">🔍 Run Validation</span>
+                  <span x-show="foundJobs.validating" class="loading"><span class="spinner"></span> Validating…</span>
+                </button>
               </div>
-              <div class="form-row mb-3">
+
+              <!-- Legend -->
+              <div x-show="foundJobs.validationResults" class="flex gap-3 mb-3" style="font-size:11px;">
+                <span class="val-status val-status-ok">✓ reachable</span>
+                <span class="val-status val-status-empty">⚠ 0 open jobs</span>
+                <span class="val-status val-status-error">✗ error / 404</span>
+                <span class="val-status val-status-timeout">⏱ timeout</span>
+                <span class="text-muted" x-text="Object.values(foundJobs.validationResults).filter(r=>r.status==='error'||r.status==='timeout').length + ' issues found'"></span>
+              </div>
+
+              <div class="form-row mb-2">
                 <input x-model="foundJobs.validationSearch" placeholder="Filter by name, ATS, or ID…" style="margin-bottom:0;" />
               </div>
-              <div style="max-height: 420px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
+              <div style="max-height: 440px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
                 <div class="val-header">
                   <span>Company</span>
                   <span>ATS</span>
                   <span>Scrape URL</span>
-                  <span style="text-align:right;">Jobs Found</span>
+                  <span style="text-align:right;">In DB</span>
+                  <span>Live Check</span>
                   <span></span>
                 </div>
                 <template x-for="co in filteredValidationCompanies" :key="co.name">
-                  <div class="val-row">
+                  <div class="val-row" :class="valRowClass(co.name)">
                     <span class="val-name" :title="co.name" x-text="co.name"></span>
                     <span :class="'ats-pill ats-' + co.ats" x-text="co.ats"></span>
                     <a class="val-url" :href="getCompanyScrapeUrl(co)" target="_blank" :title="getCompanyScrapeUrl(co)" x-text="getCompanyScrapeUrl(co)"></a>
                     <span class="val-count" x-text="(foundJobs.analytics?.company_job_counts?.[co.name] ?? 0)"></span>
+                    <span class="val-status" :class="valStatusClass(co.name)" x-text="valStatusText(co.name)"></span>
                     <span class="val-dot" :class="co.enabled !== false ? 'val-dot-on' : 'val-dot-off'" :title="co.enabled !== false ? 'Enabled' : 'Disabled'"></span>
                   </div>
                 </template>
@@ -1144,6 +1171,8 @@ function app() {
       analytics: null,
       analyticsLoading: false,
       validationSearch: '',
+      validationResults: null,
+      validating: false,
     },
 
     // Toast
@@ -1240,6 +1269,49 @@ function app() {
 
     analyticsBarWidth(count, maxCount) {
       return maxCount > 0 ? Math.round((count / maxCount) * 100) + '%' : '0%';
+    },
+
+    async validateCompanies() {
+      this.foundJobs.validating = true;
+      this.foundJobs.validationResults = null;
+      try {
+        const res = await fetch('/scrape/validate', { signal: AbortSignal.timeout(90000) });
+        const list = await res.json();
+        const map = {};
+        for (const r of list) map[r.name] = r;
+        this.foundJobs.validationResults = map;
+      } catch(e) {
+        this.showToast('Validation failed: ' + e.message);
+      } finally {
+        this.foundJobs.validating = false;
+      }
+    },
+
+    valStatusClass(name) {
+      const r = this.foundJobs.validationResults?.[name];
+      if (!r) return 'val-status-pending';
+      if (r.status === 'ok')      return 'val-status-ok';
+      if (r.status === 'empty')   return 'val-status-empty';
+      if (r.status === 'timeout') return 'val-status-timeout';
+      return 'val-status-error';
+    },
+
+    valStatusText(name) {
+      const r = this.foundJobs.validationResults?.[name];
+      if (!r) return '—';
+      if (r.status === 'ok')      return `✓ ${r.total_jobs ?? ''} jobs`;
+      if (r.status === 'empty')   return '⚠ 0 open';
+      if (r.status === 'timeout') return '⏱ timeout';
+      if (r.status === 'no_url')  return '⚠ no URL';
+      return `✗ ${r.http_status || 'err'}`;
+    },
+
+    valRowClass(name) {
+      const r = this.foundJobs.validationResults?.[name];
+      if (!r) return '';
+      if (r.status === 'error' || r.status === 'timeout') return 'val-err';
+      if (r.status === 'empty') return 'val-warn';
+      return '';
     },
 
     getCompanyScrapeUrl(co) {
