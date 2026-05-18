@@ -66,9 +66,10 @@ def get_analytics(db: Session = Depends(get_db)):
             bucket = "Staff/Principal (8+)"
         yoe_dist[bucket] = yoe_dist.get(bucket, 0) + 1
 
-    # Companies
+    # Companies — top 15 for the bar chart, full dict for validation panel
     company_counts = Counter(j.company for j in jobs)
     companies = [{"name": c, "count": n} for c, n in company_counts.most_common(15)]
+    company_job_counts = dict(company_counts)  # all companies, keyed by name
 
     # Title keywords — split titles into words, keep meaningful ones
     _STOP = {"and", "or", "the", "a", "an", "of", "for", "in", "at", "to", "with",
@@ -98,6 +99,7 @@ def get_analytics(db: Session = Depends(get_db)):
         "in_pipeline": in_pipeline,
         "top_companies": companies,
         "top_keywords": top_keywords,
+        "company_job_counts": company_job_counts,
     }
 
 

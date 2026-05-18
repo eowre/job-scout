@@ -183,6 +183,25 @@
     .analytics-bar-count { color: #64748b; flex: 0 0 28px; text-align: right; }
     .yoe-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #1e2d3d; color: #60a5fa; }
 
+    /* Company validation panel */
+    .validation-panel { margin-top: 20px; border-top: 1px solid #2d3148; padding-top: 18px; }
+    .ats-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
+    .ats-greenhouse { background: #14532d; color: #4ade80; }
+    .ats-lever      { background: #431407; color: #fb923c; }
+    .ats-ashby      { background: #2e1065; color: #a78bfa; }
+    .ats-generic    { background: #1e2d3d; color: #94a3b8; }
+    .val-row { display: grid; grid-template-columns: 180px 72px 1fr 56px 20px; align-items: center; gap: 12px; padding: 8px 6px; border-bottom: 1px solid #1e2235; font-size: 12px; }
+    .val-row:last-child { border-bottom: none; }
+    .val-row:hover { background: #1a1d27; border-radius: 6px; }
+    .val-name { font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .val-url { color: #60a5fa; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; font-family: monospace; font-size: 11px; }
+    .val-url:hover { text-decoration: underline; }
+    .val-count { text-align: right; color: #64748b; font-weight: 600; }
+    .val-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .val-dot-on  { background: #4ade80; }
+    .val-dot-off { background: #475569; }
+    .val-header { display: grid; grid-template-columns: 180px 72px 1fr 56px 20px; gap: 12px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
+
     /* Utilities */
     .flex { display: flex; }
     .items-center { align-items: center; }
@@ -445,6 +464,37 @@
                   </div>
                 </template>
                 <div class="text-xs text-muted mt-2" x-text="`${foundJobs.analytics.yoe_coverage} of ${foundJobs.analytics.total} jobs have YOE data`"></div>
+              </div>
+            </div>
+            <!-- Company Validation Panel -->
+            <div class="validation-panel">
+              <div class="flex justify-between items-center mb-3">
+                <div class="analytics-col-title" style="margin-bottom:0;">Company Scrape Validation</div>
+                <span class="text-xs text-muted" x-text="(scout.companies || []).length + ' companies configured'"></span>
+              </div>
+              <div class="form-row mb-3">
+                <input x-model="foundJobs.validationSearch" placeholder="Filter by name, ATS, or ID…" style="margin-bottom:0;" />
+              </div>
+              <div style="max-height: 420px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
+                <div class="val-header">
+                  <span>Company</span>
+                  <span>ATS</span>
+                  <span>Scrape URL</span>
+                  <span style="text-align:right;">Jobs Found</span>
+                  <span></span>
+                </div>
+                <template x-for="co in filteredValidationCompanies" :key="co.name">
+                  <div class="val-row">
+                    <span class="val-name" :title="co.name" x-text="co.name"></span>
+                    <span :class="'ats-pill ats-' + co.ats" x-text="co.ats"></span>
+                    <a class="val-url" :href="getCompanyScrapeUrl(co)" target="_blank" :title="getCompanyScrapeUrl(co)" x-text="getCompanyScrapeUrl(co)"></a>
+                    <span class="val-count" x-text="(foundJobs.analytics?.company_job_counts?.[co.name] ?? 0)"></span>
+                    <span class="val-dot" :class="co.enabled !== false ? 'val-dot-on' : 'val-dot-off'" :title="co.enabled !== false ? 'Enabled' : 'Disabled'"></span>
+                  </div>
+                </template>
+                <div class="text-muted text-sm" style="padding: 12px 6px;" x-show="filteredValidationCompanies.length === 0">
+                  No companies match your filter.
+                </div>
               </div>
             </div>
           </div>
@@ -1093,6 +1143,7 @@ function app() {
       showAnalytics: false,
       analytics: null,
       analyticsLoading: false,
+      validationSearch: '',
     },
 
     // Toast
@@ -1175,8 +1226,13 @@ function app() {
     async loadFoundJobsAnalytics() {
       this.foundJobs.analyticsLoading = true;
       try {
-        const res = await fetch('/found-jobs/analytics');
-        this.foundJobs.analytics = await res.json();
+        const [analyticsRes, companiesRes] = await Promise.all([
+          fetch('/found-jobs/analytics'),
+          fetch('/scrape/companies'),
+        ]);
+        this.foundJobs.analytics = await analyticsRes.json();
+        // Store full company list on scout so validation panel can use it
+        this.scout.companies = await companiesRes.json();
       } finally {
         this.foundJobs.analyticsLoading = false;
       }
@@ -1184,6 +1240,27 @@ function app() {
 
     analyticsBarWidth(count, maxCount) {
       return maxCount > 0 ? Math.round((count / maxCount) * 100) + '%' : '0%';
+    },
+
+    getCompanyScrapeUrl(co) {
+      const id = co.id || '';
+      switch (co.ats) {
+        case 'greenhouse': return `https://boards.greenhouse.io/embed/job_board/json?for=${id}`;
+        case 'lever':      return `https://api.lever.co/v0/postings/${id}?mode=json`;
+        case 'ashby':      return `https://jobs.ashbyhq.com/${id}`;
+        default:           return co.url || '';
+      }
+    },
+
+    get filteredValidationCompanies() {
+      const q = this.foundJobs.validationSearch.toLowerCase();
+      const companies = this.scout.companies || [];
+      if (!q) return companies;
+      return companies.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.ats.toLowerCase().includes(q) ||
+        (c.id || '').toLowerCase().includes(q)
+      );
     },
 
     async loadMoreFoundJobs() {
