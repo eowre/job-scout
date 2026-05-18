@@ -168,6 +168,21 @@
     .fj-modal-resp li:last-child { border-bottom: none; }
     .fj-modal-resp li::before { content: "→"; color: #818cf8; flex-shrink: 0; }
 
+    /* Found Jobs analytics */
+    .analytics-panel { background: #12141f; border: 1px solid #2d3148; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .analytics-stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+    .analytics-stat { background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px; padding: 14px; text-align: center; }
+    .analytics-stat-value { font-size: 22px; font-weight: 800; color: #818cf8; }
+    .analytics-stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+    .analytics-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .analytics-col-title { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+    .analytics-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+    .analytics-bar-label { color: #94a3b8; flex: 0 0 auto; max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .analytics-bar-track { flex: 1; background: #252836; border-radius: 3px; height: 5px; }
+    .analytics-bar-fill { height: 5px; background: #818cf8; border-radius: 3px; }
+    .analytics-bar-count { color: #64748b; flex: 0 0 28px; text-align: right; }
+    .yoe-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #1e2d3d; color: #60a5fa; }
+
     /* Utilities */
     .flex { display: flex; }
     .items-center { align-items: center; }
@@ -351,7 +366,89 @@
         <div class="flex gap-2 items-center">
           <span class="text-sm text-muted" x-text="foundJobs.total + ' total'"></span>
           <button class="btn btn-ghost btn-sm" @click="loadFoundJobs()">↻ Refresh</button>
+          <button class="btn btn-sm" :class="foundJobs.showAnalytics ? 'btn-primary' : 'btn-ghost'"
+            @click="foundJobs.showAnalytics = !foundJobs.showAnalytics; if(foundJobs.showAnalytics && !foundJobs.analytics) loadFoundJobsAnalytics()">
+            📊 Analytics
+          </button>
         </div>
+      </div>
+
+      <!-- Analytics panel -->
+      <div class="analytics-panel" x-show="foundJobs.showAnalytics" x-cloak>
+        <div x-show="foundJobs.analyticsLoading" class="loading"><span class="spinner"></span> Loading analytics…</div>
+        <template x-if="foundJobs.analytics && !foundJobs.analyticsLoading">
+          <div>
+            <!-- Summary stats -->
+            <div class="analytics-stat-row">
+              <div class="analytics-stat">
+                <div class="analytics-stat-value" x-text="foundJobs.analytics.total"></div>
+                <div class="analytics-stat-label">Total Found</div>
+              </div>
+              <div class="analytics-stat">
+                <div class="analytics-stat-value" x-text="foundJobs.analytics.parsed"></div>
+                <div class="analytics-stat-label">Parsed</div>
+              </div>
+              <div class="analytics-stat">
+                <div class="analytics-stat-value" x-text="foundJobs.analytics.avg_yoe ?? '—'"></div>
+                <div class="analytics-stat-label">Avg Min YOE</div>
+              </div>
+              <div class="analytics-stat">
+                <div class="analytics-stat-value" x-text="foundJobs.analytics.jobs_with_comp"></div>
+                <div class="analytics-stat-label">With Comp</div>
+              </div>
+              <div class="analytics-stat">
+                <div class="analytics-stat-value" x-text="foundJobs.analytics.in_pipeline"></div>
+                <div class="analytics-stat-label">In Pipeline</div>
+              </div>
+            </div>
+
+            <!-- Breakdowns -->
+            <div class="analytics-cols">
+              <!-- Top Companies -->
+              <div>
+                <div class="analytics-col-title">Top Companies</div>
+                <template x-for="co in foundJobs.analytics.top_companies" :key="co.name">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" :title="co.name" x-text="co.name"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(co.count, foundJobs.analytics.top_companies[0].count)}`"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="co.count"></span>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Top Title Keywords -->
+              <div>
+                <div class="analytics-col-title">Title Keywords</div>
+                <template x-for="kw in foundJobs.analytics.top_keywords" :key="kw.keyword">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" x-text="kw.keyword"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(kw.count, foundJobs.analytics.top_keywords[0].count)}`" style="background:#34d399;"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="kw.count"></span>
+                  </div>
+                </template>
+              </div>
+
+              <!-- YOE Distribution -->
+              <div>
+                <div class="analytics-col-title">Experience Level</div>
+                <template x-for="[bucket, count] in Object.entries(foundJobs.analytics.yoe_distribution || {})" :key="bucket">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" x-text="bucket"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(count, Math.max(...Object.values(foundJobs.analytics.yoe_distribution)))}; background:#fbbf24;`"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="count"></span>
+                  </div>
+                </template>
+                <div class="text-xs text-muted mt-2" x-text="`${foundJobs.analytics.yoe_coverage} of ${foundJobs.analytics.total} jobs have YOE data`"></div>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Filters -->
@@ -379,7 +476,8 @@
             <div class="fj-card-meta">
               <span x-show="job.location" x-text="'📍 ' + job.location"></span>
               <span x-show="job.department" x-text="job.department"></span>
-              <span x-text="job.discovered_at ? new Date(job.discovered_at).toLocaleDateString() : ''"></span>
+              <span x-show="job.years_of_experience !== null && job.years_of_experience !== undefined" class="yoe-badge" x-text="job.years_of_experience + '+ yrs'"></span>
+              <span x-show="job.posted_date" x-text="job.posted_date ? '📅 ' + new Date(job.posted_date).toLocaleDateString() : ''"></span>
             </div>
             <div x-show="job.compensation" class="fj-card-comp" x-text="'💰 ' + job.compensation"></div>
             <div class="fj-card-summary" x-text="job.parsed_summary || job.raw_description || 'No description available.'"></div>
@@ -417,8 +515,13 @@
           <div class="flex gap-2 items-center mb-3" style="flex-wrap:wrap;">
             <span x-show="foundJobs.selected?.location" class="tag" x-text="'📍 ' + foundJobs.selected?.location"></span>
             <span x-show="foundJobs.selected?.department" class="tag" x-text="foundJobs.selected?.department"></span>
+            <span x-show="foundJobs.selected?.years_of_experience !== null && foundJobs.selected?.years_of_experience !== undefined" class="yoe-badge" x-text="foundJobs.selected?.years_of_experience + '+ yrs exp'"></span>
             <span x-show="foundJobs.selected?.compensation" class="fj-card-comp" x-text="'💰 ' + foundJobs.selected?.compensation"></span>
             <span class="badge" :class="foundJobs.selected?.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="foundJobs.selected?.parsed_at ? 'Parsed' : 'Not yet parsed'"></span>
+          </div>
+          <div class="text-xs text-muted mb-3" style="display:flex; gap:16px;">
+            <span x-show="foundJobs.selected?.posted_date">📅 Posted: <span x-text="foundJobs.selected?.posted_date ? new Date(foundJobs.selected.posted_date).toLocaleDateString() : ''"></span></span>
+            <span x-show="foundJobs.selected?.scouted_at">🔭 Scouted: <span x-text="foundJobs.selected?.scouted_at ? new Date(foundJobs.selected.scouted_at).toLocaleDateString() : ''"></span></span>
           </div>
 
           <div x-show="foundJobs.selected?.parsed_summary">
@@ -987,6 +1090,9 @@ function app() {
       filterAdded: '',
       skip: 0,
       selected: null,
+      showAnalytics: false,
+      analytics: null,
+      analyticsLoading: false,
     },
 
     // Toast
@@ -1064,6 +1170,20 @@ function app() {
       } finally {
         this.foundJobs.loading = false;
       }
+    },
+
+    async loadFoundJobsAnalytics() {
+      this.foundJobs.analyticsLoading = true;
+      try {
+        const res = await fetch('/found-jobs/analytics');
+        this.foundJobs.analytics = await res.json();
+      } finally {
+        this.foundJobs.analyticsLoading = false;
+      }
+    },
+
+    analyticsBarWidth(count, maxCount) {
+      return maxCount > 0 ? Math.round((count / maxCount) * 100) + '%' : '0%';
     },
 
     async loadMoreFoundJobs() {

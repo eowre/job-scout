@@ -56,6 +56,8 @@ async def _parse_and_save(discovered_id: int, title: str, company: str, raw_desc
         job.compensation = result.get("compensation")
         responsibilities = result.get("responsibilities", [])
         job.responsibilities = json.dumps(responsibilities) if responsibilities else None
+        yoe = result.get("years_of_experience")
+        job.years_of_experience = float(yoe) if yoe is not None else None
         job.parsed_at = datetime.utcnow()
         db.commit()
         logger.info(f"  Parsed: {title} @ {company}")
@@ -101,6 +103,7 @@ async def run_scan() -> dict:
                     location=job.location,
                     department=job.department,
                     raw_description=job.description,
+                    posted_date=job.posted_date,
                 )
                 db.add(db_job)
                 db.commit()

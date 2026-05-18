@@ -9,8 +9,9 @@ Supported ATS platforms:
 """
 import asyncio
 import logging
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -35,6 +36,26 @@ class ScrapedJob:
     description: str = ""
     location:    str = ""
     department:  str = ""
+    posted_date: Optional[datetime] = None
+
+
+def _parse_iso(s: str) -> Optional[datetime]:
+    """Parse an ISO-8601 date string tolerantly; return None on failure."""
+    if not s:
+        return None
+    try:
+        # Python 3.11+ handles Z; strip it for older compat
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _parse_ms_timestamp(ms) -> Optional[datetime]:
+    """Parse a Unix millisecond timestamp to a naive UTC datetime."""
+    try:
+        return datetime.utcfromtimestamp(int(ms) / 1000)
+    except Exception:
+        return None
 
 
 def _matches(title: str, description: str = "") -> bool:
@@ -117,6 +138,7 @@ async def _scrape_greenhouse(session: aiohttp.ClientSession, company: dict) -> L
                 location    = j.get("location", {}).get("name", ""),
                 department  = dept,
                 description = desc if isinstance(desc, str) else "",
+                posted_date = _parse_iso(j.get("updated_at", "")),
             ))
         return jobs
 
@@ -164,6 +186,7 @@ async def _scrape_lever(session: aiohttp.ClientSession, company: dict) -> List[S
                 location    = cats.get("location", ""),
                 department  = cats.get("team", ""),
                 description = description,
+                posted_date = _parse_ms_timestamp(j.get("createdAt")),
             ))
         return jobs
 
@@ -188,6 +211,7 @@ query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
       isRemote
       externalLink
       descriptionHtml
+      publishedDate
     }
   }
 }
@@ -227,6 +251,7 @@ async def _scrape_ashby(session: aiohttp.ClientSession, company: dict) -> List[S
                 location    = location,
                 department  = j.get("departmentName", ""),
                 description = _strip_html(j.get("descriptionHtml", "")),
+                posted_date = _parse_iso(j.get("publishedDate", "")),
             ))
         return jobs
 

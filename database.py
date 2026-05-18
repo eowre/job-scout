@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, Date, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -55,16 +55,20 @@ class DiscoveredJob(Base):
     url = Column(String, nullable=False)
     location = Column(String, default="")
     department = Column(String, default="")
+    # ATS-provided date (when the role was posted)
+    posted_date = Column(DateTime, nullable=True)
     # Raw description fetched from ATS
     raw_description = Column(Text, default="")
     # Claude-parsed fields (populated async after discovery)
     parsed_summary = Column(Text, nullable=True)
     compensation = Column(String, nullable=True)
     responsibilities = Column(Text, nullable=True)  # JSON array
+    years_of_experience = Column(Float, nullable=True)
     parsed_at = Column(DateTime, nullable=True)
     # Pipeline promotion
     added_to_pipeline = Column(Boolean, default=False)
     pipeline_job_id = Column(Integer, nullable=True)
+    # scouted_at is the canonical name; discovered_at kept as column name for compat
     discovered_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -95,6 +99,18 @@ def init_db():
 def _migrate():
     inspector = inspect(engine)
     tables = inspector.get_table_names()
+
+    if "discovered_jobs" in tables:
+        existing = {col["name"] for col in inspector.get_columns("discovered_jobs")}
+        dj_migrations = {
+            "posted_date":         "ALTER TABLE discovered_jobs ADD COLUMN posted_date DATETIME",
+            "years_of_experience": "ALTER TABLE discovered_jobs ADD COLUMN years_of_experience REAL",
+        }
+        with engine.connect() as conn:
+            for col, sql in dj_migrations.items():
+                if col not in existing:
+                    conn.execute(text(sql))
+                    conn.commit()
 
     if "jobs" in tables:
         existing = {col["name"] for col in inspector.get_columns("jobs")}

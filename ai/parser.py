@@ -34,6 +34,7 @@ _PROMPT = """Given this job posting, extract:
 1. A 2-3 sentence plain-English summary of the role.
 2. Compensation (salary range, equity, or null if not mentioned).
 3. The 4-7 most important responsibilities as short bullet strings.
+4. Minimum years of experience required as an integer (e.g. if "3-5 years" use 3; if "entry level" use 0; if not mentioned use null).
 
 Job Title: TITLE_PLACEHOLDER
 Company: COMPANY_PLACEHOLDER
@@ -45,7 +46,8 @@ Respond ONLY with this JSON shape:
 {
   "parsed_summary": "<2-3 sentence summary>",
   "compensation": "<salary/comp string or null>",
-  "responsibilities": ["<bullet 1>", "<bullet 2>", ...]
+  "responsibilities": ["<bullet 1>", "<bullet 2>", ...],
+  "years_of_experience": <integer or null>
 }"""
 
 

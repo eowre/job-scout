@@ -1,10 +1,11 @@
 import asyncio
 import json
+from collections import Counter
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db, DiscoveredJob, Job
@@ -31,10 +32,72 @@ def _serialize(j: DiscoveredJob) -> dict:
         "parsed_summary": j.parsed_summary,
         "compensation": j.compensation,
         "responsibilities": responsibilities,
+        "years_of_experience": j.years_of_experience,
         "parsed_at": j.parsed_at.isoformat() if j.parsed_at else None,
+        "posted_date": j.posted_date.isoformat() if j.posted_date else None,
+        "scouted_at": j.discovered_at.isoformat() if j.discovered_at else None,
         "added_to_pipeline": j.added_to_pipeline,
         "pipeline_job_id": j.pipeline_job_id,
-        "discovered_at": j.discovered_at.isoformat() if j.discovered_at else None,
+    }
+
+
+@router.get("/analytics")
+def get_analytics(db: Session = Depends(get_db)):
+    """Summary stats and breakdowns for all discovered jobs."""
+    jobs = db.query(DiscoveredJob).all()
+
+    total = len(jobs)
+    parsed = sum(1 for j in jobs if j.parsed_at)
+
+    # YOE
+    yoe_values = [j.years_of_experience for j in jobs if j.years_of_experience is not None]
+    avg_yoe = round(sum(yoe_values) / len(yoe_values), 1) if yoe_values else None
+    yoe_dist: dict[str, int] = {}
+    for y in yoe_values:
+        if y == 0:
+            bucket = "Entry (0)"
+        elif y <= 2:
+            bucket = "Junior (1-2)"
+        elif y <= 4:
+            bucket = "Mid (3-4)"
+        elif y <= 7:
+            bucket = "Senior (5-7)"
+        else:
+            bucket = "Staff/Principal (8+)"
+        yoe_dist[bucket] = yoe_dist.get(bucket, 0) + 1
+
+    # Companies
+    company_counts = Counter(j.company for j in jobs)
+    companies = [{"name": c, "count": n} for c, n in company_counts.most_common(15)]
+
+    # Title keywords — split titles into words, keep meaningful ones
+    _STOP = {"and", "or", "the", "a", "an", "of", "for", "in", "at", "to", "with",
+             "senior", "staff", "principal", "lead", "jr", "junior", "associate",
+             "remote", "hybrid", "contract", "full", "time", "part"}
+    word_counts: Counter = Counter()
+    for j in jobs:
+        for word in j.title.lower().split():
+            word = word.strip("(),/–-")
+            if len(word) > 2 and word not in _STOP:
+                word_counts[word] += 1
+    top_keywords = [{"keyword": w, "count": n} for w, n in word_counts.most_common(15)]
+
+    # Compensation
+    jobs_with_comp = sum(1 for j in jobs if j.compensation and j.compensation.lower() not in ("null", "none", ""))
+
+    # Pipeline rate
+    in_pipeline = sum(1 for j in jobs if j.added_to_pipeline)
+
+    return {
+        "total": total,
+        "parsed": parsed,
+        "avg_yoe": avg_yoe,
+        "yoe_coverage": len(yoe_values),
+        "yoe_distribution": yoe_dist,
+        "jobs_with_comp": jobs_with_comp,
+        "in_pipeline": in_pipeline,
+        "top_companies": companies,
+        "top_keywords": top_keywords,
     }
 
 
@@ -135,6 +198,8 @@ async def _reparse(job_id: int, title: str, company: str, raw_description: str):
         job.compensation = result.get("compensation")
         responsibilities = result.get("responsibilities", [])
         job.responsibilities = json.dumps(responsibilities) if responsibilities else None
+        yoe = result.get("years_of_experience")
+        job.years_of_experience = float(yoe) if yoe is not None else None
         job.parsed_at = datetime.utcnow()
         db.commit()
     finally:
