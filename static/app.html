@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Job Scout</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js" defer></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    /* Layout */
+    .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .sidebar { background: #1a1d27; border-right: 1px solid #2d3148; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; }
+    .main { padding: 32px; overflow-y: auto; }
+
+    /* Sidebar */
+    .logo { font-size: 16px; font-weight: 700; color: #818cf8; margin-bottom: 24px; padding: 0 8px; letter-spacing: -0.3px; }
+    .logo span { color: #e2e8f0; }
+    .nav-btn { background: none; border: none; color: #94a3b8; padding: 10px 12px; border-radius: 8px; cursor: pointer; text-align: left; width: 100%; font-size: 14px; transition: all 0.15s; display: flex; align-items: center; gap: 10px; }
+    .nav-btn:hover { background: #252836; color: #e2e8f0; }
+    .nav-btn.active { background: #252836; color: #818cf8; font-weight: 500; }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* Cards & containers */
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 24px; }
+    .page-title { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+    .page-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+
+    /* Form elements */
+    label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; font-weight: 500; }
+    input, textarea, select { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; color: #e2e8f0; padding: 10px 14px; font-size: 14px; font-family: inherit; transition: border-color 0.15s; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #818cf8; }
+    textarea { resize: vertical; }
+    .form-row { margin-bottom: 16px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    /* Buttons */
+    .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px; }
+    .btn-primary { background: #818cf8; color: #fff; }
+    .btn-primary:hover { background: #6366f1; }
+    .btn-primary:disabled { background: #3d4068; color: #64748b; cursor: not-allowed; }
+    .btn-ghost { background: #252836; color: #94a3b8; border: 1px solid #2d3148; }
+    .btn-ghost:hover { background: #2d3148; color: #e2e8f0; }
+    .btn-danger { background: #3d1a1a; color: #f87171; border: 1px solid #5c2626; }
+    .btn-danger:hover { background: #5c2626; }
+    .btn-sm { padding: 6px 14px; font-size: 13px; }
+
+    /* Score display */
+    .score-ring { width: 100px; height: 100px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-direction: column; font-size: 26px; font-weight: 800; border: 5px solid; margin: 0 auto 16px; }
+    .score-high { border-color: #34d399; color: #34d399; }
+    .score-mid { border-color: #fbbf24; color: #fbbf24; }
+    .score-low { border-color: #f87171; color: #f87171; }
+    .score-label { font-size: 10px; font-weight: 500; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .breakdown-bar { margin-bottom: 4px; }
+    .breakdown-bar-label { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #94a3b8; margin-bottom: 4px; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; user-select: none; }
+    .breakdown-bar-label:hover { background: #252836; }
+    .breakdown-bar-label .chevron { font-size: 10px; color: #475569; transition: transform 0.2s; }
+    .breakdown-bar-label .chevron.open { transform: rotate(180deg); }
+    .bar-track { background: #252836; border-radius: 4px; height: 6px; margin: 0 6px 8px; }
+    .bar-fill { height: 6px; border-radius: 4px; transition: width 0.6s ease; }
+    .breakdown-dropdown { background: #12141f; border: 1px solid #2d3148; border-radius: 8px; padding: 12px 14px; margin: 0 6px 12px; font-size: 12px; }
+    .breakdown-dropdown-item { display: flex; gap: 8px; padding: 4px 0; color: #94a3b8; line-height: 1.4; border-bottom: 1px solid #1e2235; }
+    .breakdown-dropdown-item:last-child { border-bottom: none; }
+    .breakdown-dropdown-item .icon { flex-shrink: 0; width: 14px; }
+    .breakdown-dropdown-empty { color: #475569; font-style: italic; }
+
+    /* Tags & badges */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .badge-apply { background: #14532d; color: #4ade80; }
+    .badge-tailor { background: #713f12; color: #fbbf24; }
+    .badge-skip { background: #3d1a1a; color: #f87171; }
+    .badge-running { background: #1e3a5f; color: #60a5fa; }
+    .badge-idle { background: #1e2d1e; color: #4ade80; }
+
+    .tag { display: inline-block; background: #252836; border: 1px solid #2d3148; color: #94a3b8; padding: 3px 10px; border-radius: 6px; font-size: 12px; margin: 3px; }
+    .tag-missing { background: #2d1a3d; border-color: #4a2060; color: #c084fc; }
+    .tag-scraped { background: #1a2d3d; border-color: #1e4060; color: #60a5fa; }
+
+    /* Pipeline Kanban */
+    .kanban { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+    .kanban-col { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 14px; min-width: 160px; }
+    .kanban-col-title { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .kanban-card { background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
+    .kanban-card:hover { border-color: #818cf8; }
+    .kanban-card-title { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 4px; line-height: 1.3; }
+    .kanban-card-company { font-size: 12px; color: #64748b; }
+    .kanban-card-score { font-size: 12px; font-weight: 700; margin-top: 8px; }
+    .kanban-card-dates { font-size: 11px; color: #475569; margin-top: 6px; }
+    .kanban-card-actions { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity 0.15s; }
+    .kanban-card:hover .kanban-card-actions { opacity: 1; }
+    .card-action-btn { background: #252836; border: 1px solid #2d3148; border-radius: 5px; padding: 3px 7px; font-size: 13px; cursor: pointer; text-decoration: none; color: inherit; transition: background 0.15s; }
+    .card-action-btn:hover { background: #2d3148; }
+    .card-action-danger:hover { background: #3d1a1a; border-color: #5c2626; }
+    .kanban-col.drag-over { background: #1e2235; border-color: #818cf8; }
+    .kanban-card[draggable="true"] { cursor: grab; }
+    .kanban-card[draggable="true"]:active { cursor: grabbing; opacity: 0.7; }
+
+    /* Diff view */
+    .diff-item { margin-bottom: 16px; border: 1px solid #2d3148; border-radius: 8px; overflow: hidden; transition: border-color 0.2s; }
+    .diff-item.accepted { border-color: #34d399; }
+    .diff-item.denied { border-color: #f87171; opacity: 0.6; }
+    .diff-original { background: #2d1a1a; padding: 12px 16px; font-size: 13px; color: #fca5a5; border-bottom: 1px solid #2d3148; }
+    .diff-tailored { background: #14261a; padding: 12px 16px; font-size: 13px; color: #86efac; }
+    .diff-tailored.retailored { background: #0d2233; color: #7dd3fc; }
+    .diff-reason { background: #1a1d27; padding: 8px 16px; font-size: 12px; color: #64748b; border-top: 1px solid #2d3148; }
+    .diff-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 4px; }
+    .diff-actions { background: #12141f; padding: 10px 16px; border-top: 1px solid #2d3148; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .diff-status { font-size: 12px; font-weight: 600; margin-left: auto; }
+    .diff-status.accepted { color: #34d399; }
+    .diff-status.denied { color: #f87171; }
+    .btn-accept { background: #14532d; color: #4ade80; border: 1px solid #166534; padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .btn-accept:hover { background: #166534; }
+    .btn-deny { background: #3d1a1a; color: #f87171; border: 1px solid #5c2626; padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .btn-deny:hover { background: #5c2626; }
+    .btn-retailor { background: #1e1a3d; color: #a5b4fc; border: 1px solid #3730a3; padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .btn-retailor:hover { background: #2e27a3; }
+    .context-box { margin-top: 8px; display: flex; gap-8px; flex-direction: column; background: #0f1117; padding: 10px 16px; border-top: 1px solid #2d3148; }
+    .save-bar { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .save-bar-counts { font-size: 13px; color: #94a3b8; display: flex; gap: 16px; }
+    .count-accepted { color: #34d399; font-weight: 600; }
+    .count-denied { color: #f87171; font-weight: 600; }
+    .count-pending { color: #fbbf24; font-weight: 600; }
+
+    /* Re-score comparison */
+    .rescore-panel { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 24px; margin-top: 20px; }
+    .score-compare { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: center; margin-bottom: 20px; }
+    .score-col { text-align: center; }
+    .score-col-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 10px; font-weight: 600; }
+    .score-arrow { font-size: 24px; color: #64748b; text-align: center; }
+    .delta-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; margin-top: 8px; }
+    .delta-pos { background: #14532d; color: #4ade80; }
+    .delta-neg { background: #3d1a1a; color: #f87171; }
+    .delta-zero { background: #252836; color: #94a3b8; }
+    .breakdown-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+    /* Scout page */
+    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 20px; text-align: center; }
+    .stat-value { font-size: 28px; font-weight: 800; color: #818cf8; margin-bottom: 4px; }
+    .stat-label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .run-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #2d3148; font-size: 13px; }
+    .run-row:last-child { border-bottom: none; }
+    .company-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e2235; font-size: 13px; }
+    .company-row:last-child { border-bottom: none; }
+    .toggle { position: relative; width: 36px; height: 20px; cursor: pointer; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track { position: absolute; inset: 0; background: #2d3148; border-radius: 20px; transition: background 0.2s; }
+    .toggle input:checked + .toggle-track { background: #818cf8; }
+    .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+    .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
+    .company-search { margin-bottom: 12px; }
+
+    /* Utilities */
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 12px; }
+    .justify-between { justify-content: space-between; }
+    .mt-2 { margin-top: 8px; }
+    .mt-3 { margin-top: 12px; }
+    .mt-4 { margin-top: 16px; }
+    .mb-3 { margin-bottom: 12px; }
+    .mb-4 { margin-bottom: 16px; }
+    .text-sm { font-size: 13px; }
+    .text-xs { font-size: 12px; }
+    .text-muted { color: #64748b; }
+    .text-accent { color: #818cf8; }
+    .divider { border: none; border-top: 1px solid #2d3148; margin: 20px 0; }
+    .loading { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 14px; }
+    .spinner { width: 18px; height: 18px; border: 2px solid #2d3148; border-top-color: #818cf8; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .section-title { font-size: 14px; font-weight: 600; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 6px 0; font-size: 14px; color: #cbd5e1; border-bottom: 1px solid #1e2235; display: flex; gap: 8px; }
+    .bullet-list li:last-child { border-bottom: none; }
+    .bullet-list li::before { content: "•"; color: #818cf8; flex-shrink: 0; }
+
+    /* Gap context feature */
+    .gap-ctx-btn { background: #1e1a3d; color: #a5b4fc; border: 1px solid #3730a3; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
+    .gap-ctx-btn:hover { background: #2e27a3; }
+    .gap-ctx-btn.active { background: #2d2060; border-color: #6d28d9; }
+    .gap-ctx-saved-badge { font-size: 11px; font-weight: 600; color: #34d399; white-space: nowrap; flex-shrink: 0; }
+    .gap-ctx-input-area { display: flex; gap: 8px; width: 100%; align-items: center; }
+    .gap-ctx-input { flex: 1; background: #0f1117; border: 1px solid #3730a3; border-radius: 7px; color: #e2e8f0; padding: 7px 12px; font-size: 13px; font-family: inherit; }
+    .gap-ctx-input:focus { outline: none; border-color: #818cf8; }
+    .gap-ctx-save-btn { background: #3730a3; color: #c7d2fe; border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
+    .gap-ctx-save-btn:hover:not(:disabled) { background: #4338ca; }
+    .gap-ctx-save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .gap-ctx-saved { display: flex; align-items: baseline; gap: 8px; background: #12101f; border: 1px solid #3730a3; border-radius: 7px; padding: 7px 12px; width: 100%; }
+    .gap-ctx-edit-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 0 2px; transition: color 0.15s; }
+    .gap-ctx-edit-btn:hover { color: #a5b4fc; }
+
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 14px 20px; font-size: 14px; color: #e2e8f0; z-index: 999; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+
+    .email-box { background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 16px; font-size: 14px; color: #cbd5e1; white-space: pre-wrap; line-height: 1.6; font-family: inherit; }
+
+    .stage-select { background: #0f1117; border: 1px solid #2d3148; border-radius: 6px; color: #e2e8f0; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1117; }
+    ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="app" x-data="app()">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="logo">Job<span>Scout</span></div>
+    <button class="nav-btn" :class="{active: page==='scout'}" @click="page='scout'; loadScout()">
+      <span class="nav-icon">🔭</span> Scout
+    </button>
+    <button class="nav-btn" :class="{active: page==='analyze'}" @click="page='analyze'">
+      <span class="nav-icon">🎯</span> Analyze
+    </button>
+    <button class="nav-btn" :class="{active: page==='pipeline'}" @click="page='pipeline'; loadJobs()">
+      <span class="nav-icon">📋</span> Pipeline
+    </button>
+    <button class="nav-btn" :class="{active: page==='resume'}" @click="page='resume'; loadResumes(); loadGeneratedResumes()">
+      <span class="nav-icon">📄</span> Resume
+    </button>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- SCOUT PAGE -->
+    <div x-show="page==='scout'">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <div class="page-title">Scout</div>
+          <div class="page-sub">Auto-discovery from 100+ company job boards</div>
+        </div>
+        <div class="flex gap-2 items-center">
+          <span class="badge" :class="scout.status.running ? 'badge-running' : 'badge-idle'"
+            x-text="scout.status.running ? 'Scanning…' : 'Idle'"></span>
+          <button class="btn btn-primary" @click="triggerScan()" :disabled="scout.triggering || scout.status.running">
+            <span x-show="!scout.triggering && !scout.status.running">⚡ Scan Now</span>
+            <span x-show="scout.triggering || scout.status.running" class="loading"><span class="spinner"></span> Running…</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stat-grid" x-show="scout.status.last_result && Object.keys(scout.status.last_result).length">
+        <div class="stat-card">
+          <div class="stat-value" x-text="scout.status.last_result.companies_scraped ?? '—'"></div>
+          <div class="stat-label">Companies Scanned</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" x-text="scout.status.last_result.jobs_found ?? '—'"></div>
+          <div class="stat-label">Matching Jobs Found</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" x-text="scout.status.last_result.jobs_new ?? '—'"></div>
+          <div class="stat-label">New This Scan</div>
+        </div>
+      </div>
+
+      <!-- Last scan info -->
+      <div class="card mb-4" x-show="scout.status.last_run">
+        <div class="text-xs text-muted">
+          Last scan: <span x-text="scout.status.last_run ? new Date(scout.status.last_run).toLocaleString() : 'Never'"></span>
+          &nbsp;·&nbsp; Next automatic scan: every 2h + 08:00/20:00 UTC
+        </div>
+      </div>
+
+      <!-- Sub-tabs -->
+      <div class="flex gap-2 mb-4">
+        <button class="btn btn-sm" :class="scout.tab==='history' ? 'btn-primary' : 'btn-ghost'" @click="scout.tab='history'; loadScoutRuns()">
+          📊 Scan History
+        </button>
+        <button class="btn btn-sm" :class="scout.tab==='companies' ? 'btn-primary' : 'btn-ghost'" @click="scout.tab='companies'; loadCompanies()">
+          🏢 Companies
+          <span x-show="scout.companies.length" x-text="'(' + scout.companies.length + ')'" style="margin-left:4px;"></span>
+        </button>
+      </div>
+
+      <!-- Scan history -->
+      <div class="card" x-show="scout.tab==='history'">
+        <div class="section-title">Recent Scans</div>
+        <div x-show="scout.runs.length === 0" class="text-muted text-sm">No scans recorded yet. Click "Scan Now" to run the first one.</div>
+        <template x-for="run in scout.runs" :key="run.id">
+          <div class="run-row">
+            <div>
+              <div class="text-sm" x-text="new Date(run.started_at).toLocaleString()"></div>
+              <div class="text-xs text-muted" x-text="run.companies_scraped + ' companies · ' + run.jobs_found + ' matched · ' + run.jobs_new + ' new'"></div>
+            </div>
+            <span class="badge badge-idle" x-show="run.jobs_new > 0" x-text="'+' + run.jobs_new + ' new'"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Company management -->
+      <div class="card" x-show="scout.tab==='companies'">
+        <div class="flex justify-between items-center mb-3">
+          <div class="section-title" style="margin-bottom:0;">Company List</div>
+          <div class="text-xs text-muted" x-text="scout.companies.filter(c=>c.enabled).length + ' enabled / ' + scout.companies.length + ' total'"></div>
+        </div>
+        <div class="company-search form-row">
+          <input x-model="scout.companySearch" placeholder="Filter companies…" style="margin-bottom:0;" />
+        </div>
+        <div style="max-height: 500px; overflow-y: auto;">
+          <template x-for="co in filteredCompanies" :key="co.name">
+            <div class="company-row">
+              <div>
+                <div class="text-sm" style="font-weight:500;" x-text="co.name"></div>
+                <div class="text-xs text-muted" x-text="co.ats.toUpperCase()"></div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" :checked="co.enabled" @change="toggleCompany(co, $event.target.checked)" />
+                <div class="toggle-track"></div>
+                <div class="toggle-thumb"></div>
+              </label>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYZE PAGE -->
+    <div x-show="page==='analyze'">
+      <div class="page-title">Analyze a Job</div>
+      <div class="page-sub">Paste a job description to get your fit score and tailored bullets</div>
+
+      <div>
+        <!-- Input panel -->
+          <div class="card mb-4">
+            <div class="form-row">
+              <label>Job Title</label>
+              <input x-model="analyze.title" placeholder="e.g. Senior Backend Engineer" />
+            </div>
+            <div class="form-row">
+              <label>Company</label>
+              <input x-model="analyze.company" placeholder="e.g. Acme Corp" />
+            </div>
+            <div class="form-row">
+              <label>Job Description</label>
+              <textarea x-model="analyze.jd" rows="10" placeholder="Paste the full job description here…"></textarea>
+            </div>
+            <div class="form-row">
+              <label>Resume to use</label>
+              <select x-model="analyze.resumeId">
+                <option value="">— select resume —</option>
+                <template x-for="r in resumes" :key="r.id">
+                  <option :value="r.id" x-text="r.filename"></option>
+                </template>
+              </select>
+            </div>
+            <div class="flex gap-2 mt-3">
+              <button class="btn btn-primary" @click="runScore()" :disabled="scoring || !analyze.jd || !analyze.resumeId">
+                <span x-show="!scoring">🎯 Score Fit</span>
+                <span x-show="scoring" class="loading"><span class="spinner"></span> Scoring…</span>
+              </button>
+              <button class="btn btn-ghost" @click="saveJob()" :disabled="!analyze.jd || !analyze.title" x-show="!currentJob">
+                💾 Save to Pipeline
+              </button>
+            </div>
+          </div>
+
+        <!-- Score result -->
+          <div class="card mb-4" x-show="scoreResult">
+            <div class="score-ring" :class="scoreClass(scoreResult?.overall_score)">
+              <span x-text="scoreResult?.overall_score"></span>
+              <span class="score-label">/ 100</span>
+            </div>
+            <div style="text-align:center; margin-bottom:16px;">
+              <span class="badge" :class="recClass(scoreResult?.recommendation)" x-text="recLabel(scoreResult?.recommendation)"></span>
+              <p class="text-sm text-muted mt-2" x-text="scoreResult?.recommendation_reason"></p>
+            </div>
+
+            <hr class="divider">
+
+            <div class="section-title">Breakdown</div>
+            <template x-for="[key, val] in Object.entries(scoreResult?.breakdown || {})">
+              <div class="breakdown-bar">
+                <div class="breakdown-bar-label" @click="toggleBreakdown(key)">
+                  <span x-text="formatKey(key)"></span>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span :style="`color:${barColor(val)}; font-weight:700;`" x-text="val + '%'"></span>
+                    <span class="chevron" :class="{ open: openBreakdowns[key] }">▼</span>
+                  </div>
+                </div>
+                <div class="bar-track">
+                  <div class="bar-fill" :style="`width:${val}%; background:${barColor(val)}`"></div>
+                </div>
+                <div class="breakdown-dropdown" x-show="openBreakdowns[key]" x-transition>
+                  <template x-for="item in breakdownDetails(key)">
+                    <div class="breakdown-dropdown-item">
+                      <span class="icon" x-text="item.icon"></span>
+                      <span x-text="item.text"></span>
+                    </div>
+                  </template>
+                  <div class="breakdown-dropdown-empty" x-show="breakdownDetails(key).length === 0">
+                    No specific detail available for this category.
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <hr class="divider">
+
+            <div class="section-title">✅ Strengths</div>
+            <ul class="bullet-list mb-3">
+              <template x-for="s in scoreResult?.strengths || []">
+                <li x-text="s"></li>
+              </template>
+            </ul>
+
+            <div class="section-title">⚠️ Gaps</div>
+            <ul class="bullet-list mb-3">
+              <template x-for="(g, gi) in scoreResult?.gaps || []" :key="gi">
+                <li style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; width:100%; gap:10px;">
+                    <span x-text="g" style="flex:1; padding-top:1px;"></span>
+                    <button class="gap-ctx-btn"
+                      x-show="!gapContexts[gi]?.saved"
+                      @click="toggleGapContext(gi)"
+                      :class="{ active: gapContexts[gi]?.showing }"
+                      title="Add relevant experience for this gap">
+                      💡 <span x-text="gapContexts[gi]?.showing ? 'Cancel' : 'I have this'"></span>
+                    </button>
+                    <span class="gap-ctx-saved-badge" x-show="gapContexts[gi]?.saved">✓ Context added</span>
+                  </div>
+                  <div class="gap-ctx-input-area" x-show="gapContexts[gi]?.showing" x-transition>
+                    <input
+                      class="gap-ctx-input"
+                      :x-model="`gapContexts.${gi}.text`"
+                      @input="setGapText(gi, $event.target.value)"
+                      @keydown.enter="saveGapContext(gi)"
+                      placeholder="Briefly describe relevant experience you have for this gap…"
+                    />
+                    <button class="gap-ctx-save-btn"
+                      @click="saveGapContext(gi)"
+                      :disabled="!gapContexts[gi]?.text?.trim()">
+                      Save
+                    </button>
+                  </div>
+                  <div class="gap-ctx-saved" x-show="gapContexts[gi]?.saved" x-transition>
+                    <span style="color:#818cf8; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px;">Your experience:</span>
+                    <span x-text="gapContexts[gi]?.saved" style="color:#a5b4fc; font-size:13px; flex:1;"></span>
+                    <button class="gap-ctx-edit-btn" @click="editGapContext(gi)" title="Edit">✎</button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+
+            <div class="section-title" x-show="scoreResult?.missing_keywords?.length">🔑 Missing Keywords</div>
+            <div x-show="scoreResult?.missing_keywords?.length">
+              <template x-for="kw in scoreResult?.missing_keywords || []">
+                <span class="tag tag-missing" x-text="kw"></span>
+              </template>
+            </div>
+
+            <hr class="divider">
+
+            <button class="btn btn-primary" @click="runTailor()" :disabled="tailoring || !currentJob">
+              <span x-show="!tailoring">✍️ Tailor My Bullets</span>
+              <span x-show="tailoring" class="loading"><span class="spinner"></span> Tailoring…</span>
+            </button>
+            <p class="text-xs text-muted mt-2" x-show="!currentJob">Save to pipeline first to enable tailoring</p>
+          </div>
+
+          <!-- Tailor result -->
+          <div class="card" id="tailor-results" x-show="bulletItems.length > 0">
+            <div class="section-title">✍️ Review Tailored Bullets</div>
+
+            <div class="save-bar">
+              <div class="save-bar-counts">
+                <span class="count-accepted" x-text="bulletCounts.accepted + ' accepted'"></span>
+                <span class="count-denied" x-text="bulletCounts.denied + ' denied'"></span>
+                <span class="count-pending" x-text="bulletCounts.pending + ' pending'"></span>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn btn-ghost btn-sm" @click="acceptAll()"
+                  x-show="bulletCounts.pending > 0"
+                  style="color:#4ade80; border-color:#166534;">✓ Accept All</button>
+                <button class="btn btn-ghost btn-sm" @click="denyAll()"
+                  x-show="bulletCounts.pending > 0"
+                  style="color:#f87171; border-color:#5c2626;">✗ Deny All</button>
+                <button class="btn btn-primary btn-sm" @click="saveAccepted()" :disabled="savingBullets || bulletCounts.pending > 0">
+                  <span x-show="!savingBullets">💾 Save Decisions</span>
+                  <span x-show="savingBullets" class="loading"><span class="spinner"></span> Saving…</span>
+                </button>
+                <button class="btn btn-primary btn-sm"
+                  x-show="bulletsSaved && bulletCounts.pending === 0 && bulletItems.length > 0"
+                  @click="generateResume()"
+                  :disabled="generatingResume"
+                  style="background:#0e7490; border-color:#0e7490;">
+                  <span x-show="!generatingResume">📄 Generate Resume</span>
+                  <span x-show="generatingResume" class="loading"><span class="spinner"></span> Building…</span>
+                </button>
+                <button class="btn btn-primary btn-sm"
+                  x-show="resumeGenerated"
+                  @click="rescoreResume()"
+                  :disabled="rescoring"
+                  style="background:#7c3aed; border-color:#7c3aed;">
+                  <span x-show="!rescoring">📊 Re-score</span>
+                  <span x-show="rescoring" class="loading"><span class="spinner"></span> Scoring…</span>
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-muted mt-2" x-show="bulletCounts.pending > 0">
+              Resolve all bullets (accept or deny) to enable saving
+            </p>
+            <p class="text-xs text-muted mt-2"
+              x-show="bulletCounts.pending === 0 && !bulletsSaved && bulletItems.length > 0">
+              Save your decisions first to unlock resume generation
+            </p>
+
+            <template x-for="(item, idx) in bulletItems" :key="idx">
+              <div class="diff-item" :class="item.status">
+                <div class="diff-original">
+                  <div class="diff-label">Original</div>
+                  <span x-text="item.original"></span>
+                </div>
+                <div class="diff-tailored" :class="item.retailored ? 'retailored' : ''">
+                  <div class="diff-label" x-text="item.retailored ? 'Re-tailored' : 'Suggested'"></div>
+                  <span x-text="item.tailored"></span>
+                </div>
+                <div class="diff-reason" x-text="'💡 ' + item.reason"></div>
+                <div class="diff-actions">
+                  <button class="btn-accept" @click="acceptBullet(idx)"
+                    x-show="item.status !== 'accepted'"
+                    :disabled="item.retailoring">✓ Accept</button>
+                  <button class="btn-deny" @click="denyBullet(idx)"
+                    x-show="item.status !== 'denied'"
+                    :disabled="item.retailoring">✗ Deny</button>
+                  <button class="btn-retailor" @click="toggleContext(idx)"
+                    :disabled="item.retailoring">
+                    <span x-show="!item.retailoring">💬 Re-tailor</span>
+                    <span x-show="item.retailoring" class="loading"><span class="spinner"></span></span>
+                  </button>
+                  <span class="diff-status accepted" x-show="item.status === 'accepted'">✓ Accepted</span>
+                  <span class="diff-status denied" x-show="item.status === 'denied'">✗ Denied</span>
+                </div>
+                <div class="context-box" x-show="item.showContext">
+                  <label style="color:#a5b4fc; margin-bottom:6px;">What should change?</label>
+                  <div class="flex gap-2">
+                    <input x-model="item.context"
+                      placeholder="e.g. emphasize team leadership, add the AWS migration detail…"
+                      @keydown.enter="submitRetailor(idx)" />
+                    <button class="btn btn-primary btn-sm" @click="submitRetailor(idx)"
+                      :disabled="!item.context || item.retailoring">Send</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div x-show="tailorResult?.summary_suggestion">
+              <div class="section-title mt-4">📝 Summary Suggestion</div>
+              <div class="card" style="background:#0f1117; border-color:#2d3148;">
+                <p class="text-sm" style="color:#a5f3fc; line-height:1.6;" x-text="tailorResult?.summary_suggestion"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Re-score comparison panel -->
+          <div class="rescore-panel" id="rescore-panel" x-show="rescoreResult">
+            <div class="section-title">📊 Before vs After Score</div>
+            <div class="score-compare">
+              <div class="score-col">
+                <div class="score-col-label">Original Resume</div>
+                <div class="score-ring" :class="scoreClass(rescoreResult?.original?.overall_score)" style="width:80px;height:80px;font-size:22px;margin:0 auto 8px;">
+                  <span x-text="rescoreResult?.original?.overall_score"></span>
+                </div>
+                <span class="badge" :class="recClass(rescoreResult?.original?.recommendation)"
+                  x-text="recLabel(rescoreResult?.original?.recommendation)"></span>
+              </div>
+              <div class="score-arrow">
+                <div>→</div>
+                <div class="delta-badge"
+                  :class="rescoreResult?.delta > 0 ? 'delta-pos' : rescoreResult?.delta < 0 ? 'delta-neg' : 'delta-zero'"
+                  x-text="(rescoreResult?.delta > 0 ? '+' : '') + rescoreResult?.delta + ' pts'">
+                </div>
+              </div>
+              <div class="score-col">
+                <div class="score-col-label">Tailored Resume</div>
+                <div class="score-ring" :class="scoreClass(rescoreResult?.tailored?.overall_score)" style="width:80px;height:80px;font-size:22px;margin:0 auto 8px;">
+                  <span x-text="rescoreResult?.tailored?.overall_score"></span>
+                </div>
+                <span class="badge" :class="recClass(rescoreResult?.tailored?.recommendation)"
+                  x-text="recLabel(rescoreResult?.tailored?.recommendation)"></span>
+              </div>
+            </div>
+            <div x-show="rescoreResult?.gaps?.length">
+              <hr class="divider">
+              <div class="section-title">⚠️ Remaining Gaps</div>
+              <ul class="bullet-list">
+                <template x-for="g in rescoreResult?.gaps || []">
+                  <li x-text="g"></li>
+                </template>
+              </ul>
+            </div>
+          </div>
+      </div>
+    </div>
+
+    <!-- PIPELINE PAGE -->
+    <div x-show="page==='pipeline'">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <div class="page-title">Pipeline</div>
+          <div class="page-sub">Track every application from saved to offer</div>
+        </div>
+      </div>
+
+      <div class="kanban">
+        <template x-for="stage in stages" :key="stage">
+          <div class="kanban-col"
+            :class="{ 'drag-over': dragOverStage === stage }"
+            @dragover.prevent="dragOverStage = stage"
+            @dragleave="dragOverStage = null"
+            @drop.prevent="dropCard(stage)">
+            <div class="kanban-col-title" x-text="stage"></div>
+            <template x-for="job in jobsByStage(stage)" :key="job.id">
+              <div class="kanban-card"
+                draggable="true"
+                @dragstart="dragStart(job)"
+                @dragend="dragOverStage = null"
+                @click="openJob(job)">
+                <div class="kanban-card-title" x-text="job.title"></div>
+                <div class="kanban-card-company" x-text="job.company || '—'"></div>
+                <span class="tag tag-scraped" x-show="job.source === 'scraped'" style="font-size:11px; padding:2px 7px; margin-top:4px; display:inline-block;">auto-found</span>
+                <div class="kanban-card-score" x-show="job.fit_score"
+                  :style="`color:${scoreColorNum(job.fit_score)}`"
+                  x-text="job.fit_score + '% fit'"></div>
+                <div class="kanban-card-dates">
+                  <span x-text="'Added ' + relativeDate(job.created_at)"></span>
+                </div>
+                <div class="kanban-card-actions" @click.stop>
+                  <button class="card-action-btn" title="Load into Analyzer" @click.stop="loadIntoAnalyzer(job)">🔬</button>
+                  <a x-show="job.job_url" :href="job.job_url" target="_blank" class="card-action-btn" title="View posting" @click.stop>🔗</a>
+                  <button class="card-action-btn card-action-danger" title="Delete" @click.stop="quickDeleteJob(job)">🗑</button>
+                  <a x-show="job.resume_url" :href="job.resume_url" class="card-action-btn" title="Download Resume" @click.stop download>📄</a>
+                </div>
+              </div>
+            </template>
+            <div class="text-xs text-muted" x-show="jobsByStage(stage).length === 0" style="padding:8px 0;">No jobs</div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Job detail modal -->
+      <div x-show="selectedJob" style="margin-top:28px;">
+        <div class="card">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h2 style="font-size:18px; font-weight:700;" x-text="selectedJob?.title"></h2>
+              <p class="text-muted text-sm" x-text="selectedJob?.company"></p>
+              <a x-show="selectedJob?.job_url" :href="selectedJob?.job_url" target="_blank"
+                class="text-xs text-accent" style="text-decoration:none; margin-top:4px; display:inline-block;">
+                View original posting ↗
+              </a>
+            </div>
+            <div class="flex gap-2 items-center">
+              <select class="stage-select" x-model="selectedJob.stage" @change="updateStage()">
+                <template x-for="s in stages">
+                  <option :value="s" x-text="s"></option>
+                </template>
+              </select>
+              <button class="btn btn-ghost btn-sm" @click="loadIntoAnalyzer(selectedJob)" style="color:#818cf8; border-color:#818cf8;">🔬 Load into Analyzer</button>
+              <a x-show="selectedJob?.resume_url" :href="selectedJob?.resume_url" class="btn btn-ghost btn-sm" style="color:#34d399; border-color:#166534;" download>📄 Resume</a>
+              <button class="btn btn-danger btn-sm" @click="deleteJob()">Delete</button>
+              <button class="btn btn-ghost btn-sm" @click="selectedJob=null">✕</button>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+            <div>
+              <!-- JD text for scraped jobs that don't have it yet -->
+              <div x-show="selectedJob?.source === 'scraped' && !selectedJob?.jd_text">
+                <label>Job Description</label>
+                <textarea x-model="pendingJd" rows="6" placeholder="Paste the full job description here to enable scoring and tailoring…"></textarea>
+                <button class="btn btn-primary btn-sm mt-2" @click="saveJd()" :disabled="!pendingJd?.trim()">
+                  Save Description
+                </button>
+                <hr class="divider">
+              </div>
+              <label>Notes</label>
+              <textarea x-model="selectedJob.notes" rows="4" @blur="saveNotes()"></textarea>
+              <label class="mt-3">Contact Info</label>
+              <input x-model="selectedJob.contact_info" @blur="saveNotes()" placeholder="Recruiter name, email, LinkedIn…" />
+
+              <hr class="divider">
+              <div class="section-title">Follow-up Email</div>
+              <button class="btn btn-ghost btn-sm" @click="genFollowup()" :disabled="generatingEmail">
+                <span x-show="!generatingEmail">📧 Draft Email for <span x-text="selectedJob?.stage"></span></span>
+                <span x-show="generatingEmail" class="loading"><span class="spinner"></span> Drafting…</span>
+              </button>
+              <div class="email-box mt-3" x-show="followupEmail" x-text="followupEmail"></div>
+            </div>
+            <div>
+              <div x-show="selectedJob?.fit_score">
+                <div class="section-title">Fit Score</div>
+                <div class="score-ring" :class="scoreClass(selectedJob?.fit_score)" style="width:70px;height:70px;font-size:18px;margin:0 0 12px 0;">
+                  <span x-text="selectedJob?.fit_score"></span>
+                </div>
+              </div>
+              <div x-show="selectedJob?.fit_breakdown?.strengths">
+                <div class="section-title">Strengths</div>
+                <ul class="bullet-list mb-3">
+                  <template x-for="s in selectedJob?.fit_breakdown?.strengths || []">
+                    <li x-text="s"></li>
+                  </template>
+                </ul>
+                <div class="section-title">Gaps</div>
+                <ul class="bullet-list">
+                  <template x-for="g in selectedJob?.fit_breakdown?.gaps || []">
+                    <li x-text="g"></li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESUME PAGE -->
+    <div x-show="page==='resume'" x-init="loadResumes(); loadGeneratedResumes()">
+
+      <div class="flex gap-2 mb-4">
+        <button class="btn btn-sm" :class="resumeTab==='master' ? 'btn-primary' : 'btn-ghost'" @click="resumeTab='master'">📄 Master Resumes</button>
+        <button class="btn btn-sm" :class="resumeTab==='generated' ? 'btn-primary' : 'btn-ghost'" @click="resumeTab='generated'; loadGeneratedResumes()">✨ Generated
+          <span x-show="generatedResumes.length > 0" x-text="'(' + generatedResumes.length + ')'" style="margin-left:4px;"></span>
+        </button>
+      </div>
+
+      <div x-show="resumeTab==='master'">
+        <div class="page-title">Master Resumes</div>
+        <div class="page-sub">Upload your base resume PDF — used for all fit scoring and tailoring</div>
+
+        <div class="card mb-4" style="max-width:480px;">
+          <div class="form-row">
+            <label>Upload Resume PDF</label>
+            <input type="file" accept=".pdf" @change="handleFile($event)" style="padding:8px;" />
+          </div>
+          <button class="btn btn-primary" @click="uploadResume()" :disabled="!uploadFile || uploading">
+            <span x-show="!uploading">⬆️ Upload Resume</span>
+            <span x-show="uploading" class="loading"><span class="spinner"></span> Uploading…</span>
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="section-title">Uploaded Resumes</div>
+          <div x-show="resumes.length === 0" class="text-muted text-sm">No resumes uploaded yet.</div>
+          <template x-for="r in resumes" :key="r.id">
+            <div class="flex justify-between items-center" style="padding: 12px 0; border-bottom: 1px solid #2d3148;">
+              <div>
+                <div class="text-sm" style="font-weight:500;" x-text="r.filename"></div>
+                <div class="text-xs text-muted" x-text="'Uploaded ' + new Date(r.uploaded_at).toLocaleDateString()"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div x-show="resumeTab==='generated'">
+        <div class="page-title">Generated Resumes</div>
+        <div class="page-sub">Tailored resumes generated from your pipeline.</div>
+
+        <div x-show="generatedResumes.length === 0" class="card">
+          <p class="text-muted text-sm">No generated resumes yet. Score a job, tailor your bullets, and hit Generate Resume.</p>
+        </div>
+
+        <div class="card" x-show="generatedResumes.length > 0">
+          <template x-for="r in generatedResumes" :key="r.id">
+            <div style="padding: 16px 0; border-bottom: 1px solid #2d3148; display:grid; grid-template-columns: 1fr auto; gap:16px; align-items:center;">
+              <div>
+                <div style="font-weight:600; font-size:14px; color:#e2e8f0;" x-text="r.title"></div>
+                <div class="text-xs text-muted mt-2" x-text="(r.company || '—') + '  ·  ' + r.stage"></div>
+                <div class="flex gap-2 mt-2" style="align-items:center;">
+                  <span x-show="r.fit_score" class="text-xs" :style="`color:${scoreColorNum(r.fit_score)}; font-weight:700;`" x-text="r.fit_score + '% fit'"></span>
+                  <span class="text-xs text-muted" x-text="'Updated ' + relativeDate(r.updated_at)"></span>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <a :href="r.pdf_url" class="btn btn-ghost btn-sm" style="color:#f87171;" download>⬇ PDF</a>
+                <a x-show="r.docx_url" :href="r.docx_url" class="btn btn-ghost btn-sm" style="color:#818cf8;" download>⬇ DOCX</a>
+                <button class="btn btn-ghost btn-sm" @click="goToJob(r.id)">📋 Pipeline</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" x-show="toast.show" x-text="toast.msg" x-transition style="display:none;"></div>
+
+</div>
+
+<script>
+function app() {
+  return {
+    page: 'scout',
+    resumes: [],
+    jobs: [],
+    stages: ['Saved','Applied','Phone Screen','Interview','Offer','Rejected'],
+
+    // Analyze
+    analyze: { title: '', company: '', jd: '', resumeId: '' },
+    scoring: false,
+    tailoring: false,
+    savingBullets: false,
+    generatingResume: false,
+    rescoring: false,
+    bulletsSaved: false,
+    resumeGenerated: false,
+    scoreResult: null,
+    tailorResult: null,
+    rescoreResult: null,
+    bulletItems: [],
+    currentJob: null,
+    openBreakdowns: {},
+    gapContexts: {},
+
+    // Pipeline
+    selectedJob: null,
+    pendingJd: '',
+    generatingEmail: false,
+    followupEmail: '',
+    draggedJob: null,
+    dragOverStage: null,
+
+    // Resume
+    uploadFile: null,
+    uploading: false,
+    resumeTab: 'master',
+    generatedResumes: [],
+
+    // Scout
+    scout: {
+      tab: 'history',
+      status: { running: false, last_run: null, last_result: {} },
+      runs: [],
+      companies: [],
+      companySearch: '',
+      triggering: false,
+    },
+
+    // Toast
+    toast: { show: false, msg: '' },
+
+    async init() {
+      await this.loadResumes();
+      await this.loadJobs();
+      await this.loadScout();
+    },
+
+    // ── Scout ─────────────────────────────────────────────────────────────────
+    async loadScout() {
+      const res = await fetch('/scrape/status');
+      this.scout.status = await res.json();
+    },
+
+    async loadScoutRuns() {
+      const res = await fetch('/scrape/runs');
+      this.scout.runs = await res.json();
+    },
+
+    async loadCompanies() {
+      const res = await fetch('/scrape/companies');
+      this.scout.companies = await res.json();
+    },
+
+    get filteredCompanies() {
+      const q = this.scout.companySearch.toLowerCase();
+      if (!q) return this.scout.companies;
+      return this.scout.companies.filter(c => c.name.toLowerCase().includes(q) || c.ats.toLowerCase().includes(q));
+    },
+
+    async triggerScan() {
+      this.scout.triggering = true;
+      try {
+        const res = await fetch('/scrape/trigger', { method: 'POST' });
+        if (res.status === 409) {
+          this.showToast('A scan is already running.');
+          return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        this.showToast('Scan started!');
+        this.scout.status.running = true;
+        // Poll status until done
+        const poll = setInterval(async () => {
+          await this.loadScout();
+          if (!this.scout.status.running) {
+            clearInterval(poll);
+            await this.loadJobs();
+            await this.loadScoutRuns();
+            this.showToast(`Scan done — ${this.scout.status.last_result.jobs_new ?? 0} new job(s)`);
+          }
+        }, 4000);
+      } catch(e) {
+        this.showToast('Error: ' + e.message);
+      }
+      this.scout.triggering = false;
+    },
+
+    async toggleCompany(co, enabled) {
+      co.enabled = enabled;
+      await fetch(`/scrape/companies/${encodeURIComponent(co.name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+    },
+
+    // ── Pipeline helpers ──────────────────────────────────────────────────────
+    async saveJd() {
+      if (!this.pendingJd?.trim() || !this.selectedJob) return;
+      await fetch(`/jobs/${this.selectedJob.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jd_text: this.pendingJd }),
+      });
+      this.selectedJob.jd_text = this.pendingJd;
+      this.pendingJd = '';
+      await this.loadJobs();
+      this.showToast('Job description saved!');
+    },
+
+    // ── Resumes ───────────────────────────────────────────────────────────────
+    async loadGeneratedResumes() {
+      const res = await fetch('/jobs/generated/list');
+      this.generatedResumes = await res.json();
+    },
+
+    goToJob(jobId) {
+      const job = this.jobs.find(j => j.id === jobId);
+      if (job) {
+        this.page = 'pipeline';
+        this.$nextTick(() => this.openJob(job));
+      } else {
+        this.loadJobs().then(() => {
+          const j = this.jobs.find(j => j.id === jobId);
+          if (j) { this.page = 'pipeline'; this.$nextTick(() => this.openJob(j)); }
+        });
+      }
+    },
+
+    async loadResumes() {
+      const res = await fetch('/resume/list');
+      this.resumes = await res.json();
+      if (this.resumes.length && !this.analyze.resumeId) {
+        this.analyze.resumeId = this.resumes[0].id;
+      }
+    },
+
+    async loadJobs() {
+      const res = await fetch('/jobs/');
+      this.jobs = await res.json();
+    },
+
+    jobsByStage(stage) {
+      return this.jobs.filter(j => j.stage === stage);
+    },
+
+    handleFile(e) {
+      this.uploadFile = e.target.files[0];
+    },
+
+    async uploadResume() {
+      if (!this.uploadFile) return;
+      this.uploading = true;
+      const fd = new FormData();
+      fd.append('file', this.uploadFile);
+      try {
+        const res = await fetch('/resume/upload', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        await this.loadResumes();
+        this.showToast('Resume uploaded!');
+        this.uploadFile = null;
+      } catch(e) {
+        this.showToast('Error: ' + e.message);
+      }
+      this.uploading = false;
+    },
+
+    async saveJob() {
+      if (!this.analyze.jd || !this.analyze.title) return;
+      const res = await fetch('/jobs/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          title: this.analyze.title,
+          company: this.analyze.company,
+          jd_text: this.analyze.jd,
+          resume_id: this.analyze.resumeId || null
+        })
+      });
+      this.currentJob = await res.json();
+      await this.loadJobs();
+      this.showToast('Saved to pipeline!');
+    },
+
+    async runScore() {
+      if (!this.analyze.jd || !this.analyze.resumeId) return;
+
+      if (!this.currentJob) {
+        await this.saveJob();
+      }
+
+      this.scoring = true;
+      this.scoreResult = null;
+      this.openBreakdowns = {};
+      this.gapContexts = {};
+      try {
+        const res = await fetch('/analysis/score', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ job_id: this.currentJob.id, resume_id: parseInt(this.analyze.resumeId) })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        this.scoreResult = await res.json();
+        await this.loadJobs();
+      } catch(e) {
+        this.showToast('Scoring error: ' + e.message);
+      }
+      this.scoring = false;
+    },
+
+    toggleGapContext(gi) {
+      const cur = this.gapContexts[gi] || { text: '', showing: false, saved: '' };
+      this.gapContexts = { ...this.gapContexts, [gi]: { ...cur, showing: !cur.showing } };
+    },
+
+    setGapText(gi, val) {
+      const cur = this.gapContexts[gi] || { text: '', showing: true, saved: '' };
+      this.gapContexts = { ...this.gapContexts, [gi]: { ...cur, text: val } };
+    },
+
+    saveGapContext(gi) {
+      const cur = this.gapContexts[gi] || { text: '', showing: true, saved: '' };
+      if (!cur.text?.trim()) return;
+      this.gapContexts = { ...this.gapContexts, [gi]: { text: cur.text, showing: false, saved: cur.text } };
+    },
+
+    editGapContext(gi) {
+      const cur = this.gapContexts[gi] || { text: '', showing: false, saved: '' };
+      this.gapContexts = { ...this.gapContexts, [gi]: { ...cur, showing: true, saved: '' } };
+    },
+
+    async runTailor() {
+      if (!this.currentJob || !this.analyze.resumeId) return;
+      this.tailoring = true;
+      this.tailorResult = null;
+      this.bulletItems = [];
+      try {
+        const gaps = this.scoreResult?.gaps || [];
+        const gap_contexts = gaps
+          .map((gap, gi) => this.gapContexts[gi]?.saved
+            ? { gap, experience: this.gapContexts[gi].saved }
+            : null)
+          .filter(Boolean);
+
+        const res = await fetch('/analysis/tailor', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            job_id: this.currentJob.id,
+            resume_id: parseInt(this.analyze.resumeId),
+            gap_contexts
+          })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        this.tailorResult = await res.json();
+        this.bulletsSaved = false;
+        this.resumeGenerated = false;
+        this.rescoreResult = null;
+        this.bulletItems = (this.tailorResult.tailored_bullets || []).map(b => ({
+          original: b.original,
+          tailored: b.tailored,
+          reason: b.reason,
+          status: 'pending',
+          showContext: false,
+          context: '',
+          retailoring: false,
+          retailored: false,
+        }));
+        this.$nextTick(() => {
+          document.getElementById('tailor-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      } catch(e) {
+        this.showToast('Tailoring error: ' + e.message);
+      }
+      this.tailoring = false;
+    },
+
+    get bulletCounts() {
+      return {
+        accepted: this.bulletItems.filter(b => b.status === 'accepted').length,
+        denied:   this.bulletItems.filter(b => b.status === 'denied').length,
+        pending:  this.bulletItems.filter(b => b.status === 'pending').length,
+      };
+    },
+
+    acceptBullet(idx) {
+      this.bulletItems = this.bulletItems.map((item, i) =>
+        i === idx ? { ...item, status: 'accepted', showContext: false } : item
+      );
+    },
+
+    denyBullet(idx) {
+      this.bulletItems = this.bulletItems.map((item, i) =>
+        i === idx ? { ...item, status: 'denied', showContext: false } : item
+      );
+    },
+
+    acceptAll() {
+      this.bulletItems = this.bulletItems.map(item =>
+        item.status === 'pending' ? { ...item, status: 'accepted', showContext: false } : item
+      );
+    },
+
+    denyAll() {
+      this.bulletItems = this.bulletItems.map(item =>
+        item.status === 'pending' ? { ...item, status: 'denied', showContext: false } : item
+      );
+    },
+
+    toggleContext(idx) {
+      this.bulletItems = this.bulletItems.map((item, i) =>
+        i === idx ? { ...item, showContext: !item.showContext } : item
+      );
+    },
+
+    async submitRetailor(idx) {
+      const item = this.bulletItems[idx];
+      if (!item.context.trim()) return;
+      this.bulletItems = this.bulletItems.map((it, i) =>
+        i === idx ? { ...it, retailoring: true, showContext: false } : it
+      );
+      try {
+        const res = await fetch('/analysis/retailor-bullet', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            job_id: this.currentJob.id,
+            original: item.original,
+            previous_tailored: item.tailored,
+            user_context: item.context,
+          })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        this.bulletItems = this.bulletItems.map((it, i) =>
+          i === idx ? { ...it, tailored: data.tailored, reason: data.reason, retailored: true, status: 'pending', context: '', retailoring: false } : it
+        );
+      } catch(e) {
+        this.showToast('Re-tailor error: ' + e.message);
+        this.bulletItems = this.bulletItems.map((it, i) =>
+          i === idx ? { ...it, retailoring: false } : it
+        );
+      }
+    },
+
+    async saveAccepted() {
+      if (!this.currentJob) return;
+      this.savingBullets = true;
+      try {
+        const res = await fetch('/analysis/accept-bullets', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            job_id: this.currentJob.id,
+            bullets: this.bulletItems.map(b => ({
+              original: b.original,
+              tailored: b.tailored,
+              status: b.status,
+            }))
+          })
+        });
+        const data = await res.json();
+        this.bulletsSaved = true;
+        this.showToast(`Saved — ${data.accepted} accepted, ${data.denied} denied`);
+      } catch(e) {
+        this.showToast('Save error: ' + e.message);
+      }
+      this.savingBullets = false;
+    },
+
+    async generateResume() {
+      if (!this.currentJob) return;
+      this.generatingResume = true;
+      try {
+        const res = await fetch(`/analysis/generate-resume/${this.currentJob.id}`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Generation failed');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="(.+?)"/);
+        a.download = match ? match[1] : 'tailored_resume.docx';
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.resumeGenerated = true;
+        this.showToast('Resume downloaded!');
+      } catch(e) {
+        this.showToast('Error: ' + e.message);
+      }
+      this.generatingResume = false;
+    },
+
+    async rescoreResume() {
+      if (!this.currentJob) return;
+      this.rescoring = true;
+      this.rescoreResult = null;
+      try {
+        const res = await fetch(`/analysis/rescore/${this.currentJob.id}`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Re-score failed');
+        }
+        this.rescoreResult = await res.json();
+        const delta = this.rescoreResult.delta;
+        this.showToast(delta > 0 ? `Score improved by +${delta} pts!` : delta < 0 ? `Score dropped ${delta} pts` : 'Score unchanged');
+        this.$nextTick(() => {
+          document.getElementById('rescore-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      } catch(e) {
+        this.showToast('Re-score error: ' + e.message);
+      }
+      this.rescoring = false;
+    },
+
+    openJob(job) {
+      this.selectedJob = { ...job };
+      this.pendingJd = '';
+      this.followupEmail = '';
+    },
+
+    loadIntoAnalyzer(job) {
+      this.analyze.title    = job.title || '';
+      this.analyze.company  = job.company || '';
+      this.analyze.jd       = job.jd_text || '';
+      this.analyze.resumeId = job.resume_id || (this.resumes[0]?.id ?? '');
+      this.currentJob = { ...job };
+
+      if (job.fit_breakdown) {
+        this.scoreResult = typeof job.fit_breakdown === 'string'
+          ? JSON.parse(job.fit_breakdown)
+          : job.fit_breakdown;
+      } else {
+        this.scoreResult = null;
+      }
+
+      this.tailorResult    = null;
+      this.bulletItems     = [];
+      this.bulletsSaved    = false;
+      this.resumeGenerated = false;
+      this.rescoreResult   = null;
+      this.gapContexts     = {};
+      this.selectedJob = null;
+      this.page = 'analyze';
+      this.showToast(`Loaded: ${job.title}`);
+    },
+
+    dragStart(job) { this.draggedJob = job; },
+
+    async dropCard(targetStage) {
+      this.dragOverStage = null;
+      if (!this.draggedJob || this.draggedJob.stage === targetStage) return;
+      const job = this.draggedJob;
+      this.draggedJob = null;
+      const idx = this.jobs.findIndex(j => j.id === job.id);
+      if (idx !== -1) this.jobs[idx].stage = targetStage;
+      await fetch(`/jobs/${job.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: targetStage })
+      });
+      await this.loadJobs();
+    },
+
+    async quickDeleteJob(job) {
+      if (!confirm(`Delete "${job.title}"?`)) return;
+      await fetch(`/jobs/${job.id}`, { method: 'DELETE' });
+      if (this.selectedJob?.id === job.id) this.selectedJob = null;
+      await this.loadJobs();
+      this.showToast('Job deleted');
+    },
+
+    relativeDate(dateStr) {
+      if (!dateStr) return '';
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const days = Math.floor(diff / 86400000);
+      if (days === 0) return 'today';
+      if (days === 1) return 'yesterday';
+      if (days < 7) return `${days}d ago`;
+      if (days < 30) return `${Math.floor(days / 7)}w ago`;
+      return `${Math.floor(days / 30)}mo ago`;
+    },
+
+    async updateStage() {
+      await fetch(`/jobs/${this.selectedJob.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ stage: this.selectedJob.stage })
+      });
+      await this.loadJobs();
+      this.showToast('Stage updated');
+    },
+
+    async saveNotes() {
+      await fetch(`/jobs/${this.selectedJob.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ notes: this.selectedJob.notes, contact_info: this.selectedJob.contact_info })
+      });
+    },
+
+    async deleteJob() {
+      if (!confirm('Delete this job?')) return;
+      await fetch(`/jobs/${this.selectedJob.id}`, { method: 'DELETE' });
+      this.selectedJob = null;
+      await this.loadJobs();
+      this.showToast('Job deleted');
+    },
+
+    async genFollowup() {
+      this.generatingEmail = true;
+      this.followupEmail = '';
+      try {
+        const res = await fetch('/analysis/followup', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ job_id: this.selectedJob.id, notes: this.selectedJob.notes || '' })
+        });
+        const data = await res.json();
+        this.followupEmail = data.email;
+      } catch(e) {
+        this.showToast('Error generating email');
+      }
+      this.generatingEmail = false;
+    },
+
+    toggleBreakdown(key) {
+      this.openBreakdowns = { ...this.openBreakdowns, [key]: !this.openBreakdowns[key] };
+    },
+
+    breakdownDetails(key, isTailored = false) {
+      const src = isTailored ? this.rescoreResult : this.scoreResult;
+      const strengths = src?.strengths || [];
+      const gaps      = src?.gaps      || [];
+      const keywords  = src?.missing_keywords || [];
+      const redFlags  = src?.red_flags  || [];
+
+      const pos = (text) => ({ icon: '✅', text });
+      const neg = (text) => ({ icon: '⚠️', text });
+      const kw  = (text) => ({ icon: '🔑', text });
+      const rf  = (text) => ({ icon: '🚩', text });
+      const inf = (text) => ({ icon: 'ℹ️', text });
+
+      switch (key) {
+        case 'skills_match':
+          return [
+            ...strengths.slice(0, 3).map(s => pos(s)),
+            ...gaps.slice(0, 2).map(g => neg(g)),
+            ...(strengths.length === 0 && gaps.length === 0 ? [inf('No specific skill signals found.')] : []),
+          ];
+        case 'experience_level':
+          return gaps.filter(g => /year|senior|junior|lead|level|experience|manag/i.test(g)).length > 0
+            ? [
+                ...gaps.filter(g => /year|senior|junior|lead|level|experience|manag/i.test(g)).map(g => neg(g)),
+                ...strengths.filter(s => /year|senior|junior|lead|level|experience|manag/i.test(s)).map(s => pos(s)),
+              ]
+            : [inf('Experience level assessed from seniority language in the JD vs. resume scope.')];
+        case 'domain_keywords':
+          return keywords.length > 0
+            ? [inf('Missing from your resume:'), ...keywords.slice(0, 8).map(k => kw(k))]
+            : [pos('Good keyword coverage — no significant gaps detected.')];
+        case 'red_flags':
+          return redFlags.length > 0
+            ? redFlags.map(f => rf(f))
+            : [pos('No red flags detected.')];
+        default:
+          return [inf('No additional detail available.')];
+      }
+    },
+
+    scoreClass(score) {
+      if (!score) return '';
+      if (score >= 70) return 'score-high';
+      if (score >= 50) return 'score-mid';
+      return 'score-low';
+    },
+
+    scoreColorNum(score) {
+      if (!score) return '#64748b';
+      if (score >= 70) return '#34d399';
+      if (score >= 50) return '#fbbf24';
+      return '#f87171';
+    },
+
+    barColor(val) {
+      if (val >= 70) return '#34d399';
+      if (val >= 50) return '#fbbf24';
+      return '#f87171';
+    },
+
+    recClass(rec) {
+      if (rec === 'apply') return 'badge-apply';
+      if (rec === 'apply_with_tailoring') return 'badge-tailor';
+      return 'badge-skip';
+    },
+
+    recLabel(rec) {
+      const map = { apply: '✅ Apply', apply_with_tailoring: '⚠️ Apply with Tailoring', skip: '❌ Skip' };
+      return map[rec] || rec;
+    },
+
+    formatKey(key) {
+      return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    showToast(msg) {
+      this.toast.msg = msg;
+      this.toast.show = true;
+      setTimeout(() => this.toast.show = false, 3500);
+    }
+  }
+}
+</script>
+</body>
+</html>
