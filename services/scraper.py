@@ -2,7 +2,9 @@
 scraper.py — Async multi-ATS job scraper with description fetching.
 
 Supported ATS platforms:
-  • Greenhouse  — list via embed API, description via boards-api v1
+  • Greenhouse  — list via embed API (old boards.greenhouse.io OR new
+                  job-boards.greenhouse.io, tried in order), description
+                  via boards-api v1 / job-boards API v1 (same fallback)
   • Lever       — list + description in single call (?mode=json)
   • Ashby       — GraphQL (includes descriptionHtml)
   • Generic     — BeautifulSoup HTML fallback
@@ -81,33 +83,67 @@ def _strip_html(html: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Greenhouse
+# Greenhouse  (supports both legacy boards.greenhouse.io and new job-boards.greenhouse.io)
 # ---------------------------------------------------------------------------
+
+# Tried in order; first that returns ≥1 job wins.
+_GH_LIST_ENDPOINTS = [
+    "https://boards.greenhouse.io/embed/job_board/json?for={co_id}",
+    "https://job-boards.greenhouse.io/embed/job_board/json?for={co_id}",
+]
+
+# Tried in order for per-job description; first 200 with content wins.
+_GH_DESC_ENDPOINTS = [
+    "https://boards-api.greenhouse.io/v1/boards/{co_id}/jobs/{job_id}",
+    "https://job-boards.greenhouse.io/api/v1/boards/{co_id}/jobs/{job_id}",
+]
+
+
 async def _fetch_greenhouse_description(
     session: aiohttp.ClientSession, co_id: str, numeric_id: int
 ) -> str:
-    url = f"https://boards-api.greenhouse.io/v1/boards/{co_id}/jobs/{numeric_id}"
-    try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)) as resp:
-            if resp.status != 200:
-                return ""
-            data = await resp.json(content_type=None)
-            return _strip_html(data.get("content", ""))
-    except Exception:
-        return ""
+    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)
+    for template in _GH_DESC_ENDPOINTS:
+        url = template.format(co_id=co_id, job_id=numeric_id)
+        try:
+            async with session.get(url, timeout=timeout) as resp:
+                if resp.status != 200:
+                    continue
+                data = await resp.json(content_type=None)
+                content = data.get("content", "")
+                if content:
+                    return _strip_html(content)
+        except Exception:
+            continue
+    return ""
 
 
 async def _scrape_greenhouse(session: aiohttp.ClientSession, company: dict) -> List[ScrapedJob]:
     co_id   = company.get("id", "")
     co_name = company["name"]
-    url     = f"https://boards.greenhouse.io/embed/job_board/json?for={co_id}"
+    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)
+
+    # Try old domain first, fall back to new domain if it returns 0 jobs.
+    data = None
+    for template in _GH_LIST_ENDPOINTS:
+        url = template.format(co_id=co_id)
+        try:
+            async with session.get(url, timeout=timeout) as resp:
+                if resp.status != 200:
+                    continue
+                candidate = await resp.json(content_type=None)
+                if candidate.get("jobs"):
+                    data = candidate
+                    logger.debug(f"[{co_name}] Greenhouse: using {url}")
+                    break
+        except Exception:
+            continue
+
+    if not data:
+        logger.warning(f"[{co_name}] Greenhouse: both endpoints empty or unreachable")
+        return []
 
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json(content_type=None)
-
         jobs = []
         fetch_tasks = []
         raw_jobs = []

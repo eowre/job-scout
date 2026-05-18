@@ -141,14 +141,28 @@ async def _check(session: aiohttp.ClientSession, co: dict) -> dict:
 
     try:
         if ats == "greenhouse":
-            url = f"https://boards.greenhouse.io/embed/job_board/json?for={co_id}"
-            async with session.get(url, timeout=_TIMEOUT) as r:
-                if r.status != 200:
-                    return {**base, "status": "error", "http_status": r.status}
-                data  = await r.json(content_type=None)
-                count = len(data.get("jobs", []))
-                return {**base, "status": "ok" if count else "empty",
-                        "http_status": 200, "total_jobs": count}
+            # Try legacy domain first, then new job-boards domain.
+            gh_endpoints = [
+                f"https://boards.greenhouse.io/embed/job_board/json?for={co_id}",
+                f"https://job-boards.greenhouse.io/embed/job_board/json?for={co_id}",
+            ]
+            last_status = 0
+            for gh_url in gh_endpoints:
+                try:
+                    async with session.get(gh_url, timeout=_TIMEOUT) as r:
+                        last_status = r.status
+                        if r.status != 200:
+                            continue
+                        data  = await r.json(content_type=None)
+                        count = len(data.get("jobs", []))
+                        if count > 0:
+                            return {**base, "status": "ok", "http_status": 200, "total_jobs": count}
+                except Exception:
+                    continue
+            # Both endpoints reachable but no jobs, OR one/both failed.
+            if last_status == 200:
+                return {**base, "status": "empty", "http_status": 200, "total_jobs": 0}
+            return {**base, "status": "error", "http_status": last_status}
 
         elif ats == "lever":
             url = f"https://api.lever.co/v0/postings/{co_id}?mode=json"
