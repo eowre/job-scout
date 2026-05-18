@@ -190,7 +190,7 @@
     .ats-lever      { background: #431407; color: #fb923c; }
     .ats-ashby      { background: #2e1065; color: #a78bfa; }
     .ats-generic    { background: #1e2d3d; color: #94a3b8; }
-    .val-row { display: grid; grid-template-columns: 160px 68px 1fr 52px 100px 18px; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #1e2235; font-size: 12px; }
+    .val-row { display: grid; grid-template-columns: 150px 65px 1fr 48px 96px 18px 28px; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #1e2235; font-size: 12px; }
     .val-row:last-child { border-bottom: none; }
     .val-row:hover { background: #1a1d27; border-radius: 6px; }
     .val-row.val-err { background: rgba(248,113,113,0.04); }
@@ -202,13 +202,31 @@
     .val-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .val-dot-on  { background: #4ade80; }
     .val-dot-off { background: #475569; }
-    .val-header { display: grid; grid-template-columns: 160px 68px 1fr 52px 100px 18px; gap: 10px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
+    .val-header { display: grid; grid-template-columns: 150px 65px 1fr 48px 96px 18px 28px; gap: 10px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
     .val-status { font-size: 11px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
     .val-status-ok      { color: #4ade80; }
     .val-status-empty   { color: #fbbf24; }
     .val-status-error   { color: #f87171; }
     .val-status-timeout { color: #fb923c; }
     .val-status-pending { color: #475569; }
+    .val-edit-btn { background: #252836; border: 1px solid #2d3148; border-radius: 5px; padding: 2px 6px; font-size: 12px; color: #64748b; cursor: pointer; transition: all 0.15s; line-height: 1; }
+    .val-edit-btn:hover { background: #818cf8; border-color: #818cf8; color: #fff; }
+
+    /* Company edit modal */
+    .edit-modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px; padding: 28px; width: 520px; max-width: 95vw; }
+    .edit-modal-label { font-size: 12px; color: #94a3b8; font-weight: 500; margin-bottom: 6px; display: block; }
+    .edit-ats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+    .edit-ats-btn { background: #0f1117; border: 1px solid #2d3148; border-radius: 7px; padding: 8px 4px; text-align: center; cursor: pointer; font-size: 12px; font-weight: 600; color: #64748b; transition: all 0.15s; }
+    .edit-ats-btn.active-greenhouse { background: #14532d; border-color: #4ade80; color: #4ade80; }
+    .edit-ats-btn.active-lever      { background: #431407; border-color: #fb923c; color: #fb923c; }
+    .edit-ats-btn.active-ashby      { background: #2e1065; border-color: #a78bfa; color: #a78bfa; }
+    .edit-ats-btn.active-generic    { background: #1e2d3d; border-color: #60a5fa; color: #60a5fa; }
+    .edit-ats-btn:hover { border-color: #818cf8; color: #818cf8; }
+    .edit-url-preview { background: #0f1117; border: 1px solid #2d3148; border-radius: 7px; padding: 8px 12px; font-family: monospace; font-size: 11px; color: #60a5fa; word-break: break-all; margin-bottom: 16px; }
+    .test-result-ok      { color: #4ade80; font-weight: 600; font-size: 13px; }
+    .test-result-empty   { color: #fbbf24; font-weight: 600; font-size: 13px; }
+    .test-result-error   { color: #f87171; font-weight: 600; font-size: 13px; }
+    .test-result-timeout { color: #fb923c; font-weight: 600; font-size: 13px; }
 
     /* Utilities */
     .flex { display: flex; }
@@ -508,6 +526,7 @@
                   <span style="text-align:right;">In DB</span>
                   <span>Live Check</span>
                   <span></span>
+                  <span></span>
                 </div>
                 <template x-for="co in filteredValidationCompanies" :key="co.name">
                   <div class="val-row" :class="valRowClass(co.name)">
@@ -517,6 +536,7 @@
                     <span class="val-count" x-text="(foundJobs.analytics?.company_job_counts?.[co.name] ?? 0)"></span>
                     <span class="val-status" :class="valStatusClass(co.name)" x-text="valStatusText(co.name)"></span>
                     <span class="val-dot" :class="co.enabled !== false ? 'val-dot-on' : 'val-dot-off'" :title="co.enabled !== false ? 'Enabled' : 'Disabled'"></span>
+                    <button class="val-edit-btn" @click="openCompanyEdit(co)" title="Edit">✏</button>
                   </div>
                 </template>
                 <div class="text-muted text-sm" style="padding: 12px 6px;" x-show="filteredValidationCompanies.length === 0">
@@ -629,6 +649,78 @@
               x-text="foundJobs.selected?.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPANY EDIT MODAL -->
+    <div x-show="foundJobs.editingCompany"
+         style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;"
+         @click.self="closeCompanyEdit()">
+      <div class="edit-modal" x-show="foundJobs.editingCompany">
+
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <div style="font-size:17px;font-weight:700;color:#f1f5f9;" x-text="foundJobs.editingCompany?.name"></div>
+            <div class="text-xs text-muted mt-1">Edit ATS configuration</div>
+          </div>
+          <button @click="closeCompanyEdit()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+        </div>
+
+        <!-- ATS selector -->
+        <span class="edit-modal-label">ATS Platform</span>
+        <div class="edit-ats-grid mb-4">
+          <template x-for="ats in ['greenhouse','lever','ashby','generic']" :key="ats">
+            <button class="edit-ats-btn"
+              :class="foundJobs.editForm.ats === ats ? 'active-' + ats : ''"
+              @click="foundJobs.editForm.ats = ats; foundJobs.editTestResult = null"
+              x-text="ats">
+            </button>
+          </template>
+        </div>
+
+        <!-- ID field (not shown for generic) -->
+        <div x-show="foundJobs.editForm.ats !== 'generic'" class="form-row">
+          <label class="edit-modal-label">Company ID <span class="text-muted">(used in ATS API path)</span></label>
+          <input x-model="foundJobs.editForm.id"
+                 @input="foundJobs.editTestResult = null"
+                 placeholder="e.g. stripe, anthropic, linear" />
+        </div>
+
+        <!-- URL field -->
+        <div class="form-row">
+          <label class="edit-modal-label">
+            <span x-show="foundJobs.editForm.ats === 'generic'">Careers Page URL</span>
+            <span x-show="foundJobs.editForm.ats !== 'generic'">Company Careers URL <span class="text-muted">(for reference / display)</span></span>
+          </label>
+          <input x-model="foundJobs.editForm.url"
+                 placeholder="https://company.com/careers" />
+        </div>
+
+        <!-- Live scrape URL preview -->
+        <div class="edit-modal-label mt-3">Scrape endpoint preview</div>
+        <div class="edit-url-preview" x-text="editScrapeUrl || '—'"></div>
+
+        <!-- Test result -->
+        <div x-show="foundJobs.editTestResult" class="mb-3">
+          <span :class="editTestResultClass()" x-text="editTestResultText()"></span>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-ghost btn-sm" @click="testCompanyEdit()"
+                  :disabled="foundJobs.editTesting || (!foundJobs.editForm.id && foundJobs.editForm.ats !== 'generic') || (!foundJobs.editForm.url && foundJobs.editForm.ats === 'generic')">
+            <span x-show="!foundJobs.editTesting">🔍 Test</span>
+            <span x-show="foundJobs.editTesting" class="loading"><span class="spinner"></span> Testing…</span>
+          </button>
+          <div style="flex:1;"></div>
+          <button class="btn btn-ghost btn-sm" @click="closeCompanyEdit()">Cancel</button>
+          <button class="btn btn-primary btn-sm" @click="saveCompanyEdit()"
+                  :disabled="foundJobs.editSaving">
+            <span x-show="!foundJobs.editSaving">💾 Save</span>
+            <span x-show="foundJobs.editSaving" class="loading"><span class="spinner"></span> Saving…</span>
+          </button>
         </div>
       </div>
     </div>
@@ -1173,6 +1265,11 @@ function app() {
       validationSearch: '',
       validationResults: null,
       validating: false,
+      editingCompany: null,
+      editForm: { ats: 'greenhouse', id: '', url: '' },
+      editTestResult: null,
+      editTesting: false,
+      editSaving: false,
     },
 
     // Toast
@@ -1269,6 +1366,86 @@ function app() {
 
     analyticsBarWidth(count, maxCount) {
       return maxCount > 0 ? Math.round((count / maxCount) * 100) + '%' : '0%';
+    },
+
+    openCompanyEdit(co) {
+      this.foundJobs.editingCompany = { ...co };
+      this.foundJobs.editForm = { ats: co.ats || 'greenhouse', id: co.id || '', url: co.url || '' };
+      this.foundJobs.editTestResult = null;
+    },
+
+    closeCompanyEdit() {
+      this.foundJobs.editingCompany = null;
+      this.foundJobs.editTestResult = null;
+    },
+
+    get editScrapeUrl() {
+      return this.getCompanyScrapeUrl(this.foundJobs.editForm);
+    },
+
+    editTestResultClass() {
+      const s = this.foundJobs.editTestResult?.status;
+      if (!s) return '';
+      if (s === 'ok')      return 'test-result-ok';
+      if (s === 'empty')   return 'test-result-empty';
+      if (s === 'timeout') return 'test-result-timeout';
+      return 'test-result-error';
+    },
+
+    editTestResultText() {
+      const r = this.foundJobs.editTestResult;
+      if (!r) return '';
+      if (r.status === 'ok')      return `✓ Reachable — ${r.total_jobs} total jobs`;
+      if (r.status === 'empty')   return '⚠ Reachable but 0 open jobs';
+      if (r.status === 'timeout') return '⏱ Request timed out';
+      if (r.status === 'no_url')  return '⚠ No URL configured';
+      return `✗ Error ${r.http_status || ''}${r.error ? ' — ' + r.error : ''}`;
+    },
+
+    async testCompanyEdit() {
+      this.foundJobs.editTesting = true;
+      this.foundJobs.editTestResult = null;
+      try {
+        const { ats, id, url } = this.foundJobs.editForm;
+        const res = await fetch('/scrape/validate/one', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: this.foundJobs.editingCompany?.name || 'test', ats, id, url }),
+        });
+        this.foundJobs.editTestResult = await res.json();
+      } catch(e) {
+        this.foundJobs.editTestResult = { status: 'error', error: e.message };
+      } finally {
+        this.foundJobs.editTesting = false;
+      }
+    },
+
+    async saveCompanyEdit() {
+      if (!this.foundJobs.editingCompany) return;
+      this.foundJobs.editSaving = true;
+      try {
+        const name = this.foundJobs.editingCompany.name;
+        const { ats, id, url } = this.foundJobs.editForm;
+        const res = await fetch(`/scrape/companies/${encodeURIComponent(name)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ats, id, url }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        // Propagate the test result into the validation map so the row updates
+        if (this.foundJobs.validationResults && this.foundJobs.editTestResult) {
+          this.foundJobs.validationResults[name] = { ...this.foundJobs.editTestResult, name };
+        }
+        // Refresh the companies list
+        const coRes = await fetch('/scrape/companies');
+        this.scout.companies = await coRes.json();
+        this.closeCompanyEdit();
+        this.showToast(`${name} updated`);
+      } catch(e) {
+        this.showToast('Save failed: ' + e.message);
+      } finally {
+        this.foundJobs.editSaving = false;
+      }
     },
 
     async validateCompanies() {
