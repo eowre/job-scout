@@ -24,6 +24,15 @@ async def trigger_scan():
     return {"started": True, "message": "Scan triggered."}
 
 
+@router.post("/company/{name}")
+async def scrape_one_company(name: str):
+    """Re-scrape a single company by name and persist any new jobs found."""
+    result = await scraper_service.run_company_scan(name)
+    if "error" in result and "not found" in result["error"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.get("/status")
 def get_status():
     return scraper_service.get_status()
@@ -112,14 +121,12 @@ def update_company(name: str, update: CompanyEdit):
 
 
 # ── Validation helpers ────────────────────────────────────────────────────────
+# Two-pass validation:
+#   Pass 1 — fast aiohttp GET for all companies (concurrent, lightweight)
+#   Pass 2 — Playwright browser check for any that returned a bot-block code
+#             (403, 406, 429, 503) so the result reflects what the real scraper sees
 
-_ASHBY_COUNT_QUERY = """
-query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
-  jobBoard: jobBoardWithTeams(
-    organizationHostedJobsPageName: $organizationHostedJobsPageName
-  ) { jobPostings { id } }
-}
-"""
+from services.scraper import browser_check_urls, _BOT_BLOCKED_CODES
 
 _UA = {
     "User-Agent": (
@@ -132,72 +139,21 @@ _UA = {
 _TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
-async def _check(session: aiohttp.ClientSession, co: dict) -> dict:
-    """Hit the ATS endpoint for one company and return a status dict."""
-    ats   = co.get("ats", "generic")
-    co_id = co.get("id", "")
-    name  = co.get("name", "")
-    base  = {"name": name, "ats": ats, "total_jobs": None, "http_status": 0}
+async def _http_check(session: aiohttp.ClientSession, co: dict) -> dict:
+    """Fast HTTP check — pass 1."""
+    name = co.get("name", "")
+    url  = co.get("url", "").strip()
+    base = {"name": name, "url": url, "http_status": 0}
+
+    if not url:
+        return {**base, "status": "no_url"}
 
     try:
-        if ats == "greenhouse":
-            # Try legacy domain first, then new job-boards domain.
-            gh_endpoints = [
-                f"https://boards.greenhouse.io/embed/job_board/json?for={co_id}",
-                f"https://job-boards.greenhouse.io/embed/job_board/json?for={co_id}",
-            ]
-            last_status = 0
-            for gh_url in gh_endpoints:
-                try:
-                    async with session.get(gh_url, timeout=_TIMEOUT) as r:
-                        last_status = r.status
-                        if r.status != 200:
-                            continue
-                        data  = await r.json(content_type=None)
-                        count = len(data.get("jobs", []))
-                        if count > 0:
-                            return {**base, "status": "ok", "http_status": 200, "total_jobs": count}
-                except Exception:
-                    continue
-            # Both endpoints reachable but no jobs, OR one/both failed.
-            if last_status == 200:
-                return {**base, "status": "empty", "http_status": 200, "total_jobs": 0}
-            return {**base, "status": "error", "http_status": last_status}
-
-        elif ats == "lever":
-            url = f"https://api.lever.co/v0/postings/{co_id}?mode=json"
-            async with session.get(url, timeout=_TIMEOUT) as r:
-                if r.status != 200:
-                    return {**base, "status": "error", "http_status": r.status}
-                data  = await r.json(content_type=None)
-                count = len(data) if isinstance(data, list) else 0
-                return {**base, "status": "ok" if count else "empty",
-                        "http_status": 200, "total_jobs": count}
-
-        elif ats == "ashby":
-            url     = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
-            payload = {
-                "operationName": "ApiJobBoardWithTeams",
-                "variables": {"organizationHostedJobsPageName": co_id},
-                "query": _ASHBY_COUNT_QUERY,
-            }
-            async with session.post(url, json=payload, timeout=_TIMEOUT) as r:
-                if r.status != 200:
-                    return {**base, "status": "error", "http_status": r.status}
-                data  = await r.json(content_type=None)
-                board = (data.get("data") or {}).get("jobBoard") or {}
-                count = len(board.get("jobPostings") or [])
-                return {**base, "status": "ok" if count else "empty",
-                        "http_status": 200, "total_jobs": count}
-
-        else:  # generic
-            url = co.get("url", "")
-            if not url:
-                return {**base, "status": "no_url"}
-            async with session.get(url, headers=_UA, timeout=_TIMEOUT,
-                                   allow_redirects=True) as r:
-                return {**base, "status": "ok" if r.status < 400 else "error",
-                        "http_status": r.status}
+        async with session.get(
+            url, headers=_UA, timeout=_TIMEOUT, allow_redirects=True
+        ) as r:
+            status = "ok" if r.status < 400 else "error"
+            return {**base, "status": status, "http_status": r.status}
 
     except asyncio.TimeoutError:
         return {**base, "status": "timeout"}
@@ -207,34 +163,75 @@ async def _check(session: aiohttp.ClientSession, co: dict) -> dict:
 
 @router.get("/validate")
 async def validate_companies():
-    """Concurrently hit every company's ATS endpoint and return live status."""
+    """
+    Two-pass validation:
+    1. HTTP GET all companies (fast).
+    2. For bot-blocked responses (403 etc.), retry with a real Playwright browser
+       and report whether the scraper would actually succeed.
+    """
     with open(COMPANIES_PATH, encoding="utf-8") as f:
         companies = json.load(f)
 
-    sem = asyncio.Semaphore(12)
+    # Pass 1 — HTTP check all companies
+    sem = asyncio.Semaphore(15)
 
     async def bounded(session, co):
         async with sem:
-            return await _check(session, co)
+            return await _http_check(session, co)
 
     connector = aiohttp.TCPConnector(ssl=False, limit=20)
     async with aiohttp.ClientSession(connector=connector) as session:
-        results = await asyncio.gather(*[bounded(session, c) for c in companies])
+        results = list(await asyncio.gather(*[bounded(session, c) for c in companies]))
 
-    return list(results)
+    # Pass 2 — browser check anything that looks bot-blocked
+    blocked = [
+        r for r in results
+        if r["status"] == "error" and r.get("http_status") in _BOT_BLOCKED_CODES
+    ]
+    if blocked:
+        urls_to_check = [r["url"] for r in blocked]
+        browser_results = await browser_check_urls(urls_to_check)
+        for r in results:
+            br = browser_results.get(r["url"])
+            if not br:
+                continue
+            r["browser_checked"] = True
+            r["browser_http_status"] = br["status"]
+            if br["ok"]:
+                r["status"] = "ok_browser"  # HTTP blocked but browser got through
+            elif br["error"]:
+                r["browser_error"] = br["error"]
+
+    return results
 
 
 class ValidateOneRequest(BaseModel):
     name: str = "test"
-    ats:  str
-    id:   str = ""
     url:  str = ""
 
 
 @router.post("/validate/one")
 async def validate_one(req: ValidateOneRequest):
-    """Test a single company config without saving — used by the edit modal."""
-    co = {"name": req.name, "ats": req.ats, "id": req.id, "url": req.url}
+    """
+    Test a single company URL. Does the two-pass check inline so the
+    edit modal always gets the most accurate result.
+    """
+    co = {"name": req.name, "url": req.url}
     connector = aiohttp.TCPConnector(ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
-        return await _check(session, co)
+        result = await _http_check(session, co)
+
+    # If bot-blocked, immediately retry with browser
+    if result["status"] == "error" and result.get("http_status") in _BOT_BLOCKED_CODES:
+        url = result["url"]
+        browser_results = await browser_check_urls([url])
+        br = browser_results.get(url)
+        if br:
+            result["browser_checked"] = True
+            result["browser_http_status"] = br["status"]
+            if br["ok"]:
+                result["status"] = "ok_browser"
+            elif br["error"]:
+                result["browser_error"] = br["error"]
+
+    return result

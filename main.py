@@ -12,7 +12,7 @@ load_dotenv()
 
 from config import CHECK_INTERVAL_HOURS
 from database import init_db
-from routers import resume, jobs, analysis, scrape, found_jobs
+from routers import resume, jobs, analysis, scrape, found_jobs, keywords
 from services import scraper_service
 
 
@@ -73,6 +73,7 @@ app.include_router(jobs.router)
 app.include_router(analysis.router)
 app.include_router(scrape.router)
 app.include_router(found_jobs.router)
+app.include_router(keywords.router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

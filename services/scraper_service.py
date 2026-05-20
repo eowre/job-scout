@@ -67,6 +67,61 @@ async def _parse_and_save(discovered_id: int, title: str, company: str, raw_desc
         db.close()
 
 
+async def run_company_scan(company_name: str) -> dict:
+    """Scrape a single company by name and persist any new jobs found."""
+    with open(COMPANIES_PATH, encoding="utf-8") as f:
+        companies = json.load(f)
+
+    company = next(
+        (c for c in companies if c["name"].lower() == company_name.lower()), None
+    )
+    if not company:
+        return {"error": f"Company '{company_name}' not found"}
+
+    logger.info(f"Single-company scan: {company['name']}")
+    try:
+        all_jobs = await scrape_all([company])
+
+        db = SessionLocal()
+        new_count = 0
+        new_discovered: list[tuple[int, str, str, str]] = []
+        try:
+            for job in all_jobs:
+                existing = db.query(DiscoveredJob).filter(
+                    DiscoveredJob.ats_job_id == job.job_id
+                ).first()
+                if existing:
+                    continue
+                db_job = DiscoveredJob(
+                    ats_job_id=job.job_id,
+                    company=job.company,
+                    title=job.title,
+                    url=job.url,
+                    location=job.location,
+                    department=job.department,
+                    raw_description=job.description,
+                    posted_date=job.posted_date,
+                )
+                db.add(db_job)
+                db.commit()
+                db.refresh(db_job)
+                new_count += 1
+                new_discovered.append((db_job.id, job.title, job.company, job.description))
+                logger.info(f"  + {job.title} @ {job.company}")
+        finally:
+            db.close()
+
+        for (did, title, co, desc) in new_discovered:
+            asyncio.create_task(_parse_and_save(did, title, co, desc))
+
+        logger.info(f"Single-company scan done — {len(all_jobs)} found, {new_count} new")
+        return {"jobs_found": len(all_jobs), "jobs_new": new_count}
+
+    except Exception as exc:
+        logger.error(f"Single-company scan failed for '{company_name}': {exc}", exc_info=True)
+        return {"error": str(exc)}
+
+
 async def run_scan() -> dict:
     global _running, _last_run, _last_result
 

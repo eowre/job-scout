@@ -204,13 +204,35 @@
     .val-dot-off { background: #475569; }
     .val-header { display: grid; grid-template-columns: 150px 65px 1fr 48px 96px 18px 28px; gap: 10px; padding: 6px 6px 8px; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; margin-bottom: 4px; }
     .val-status { font-size: 11px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
-    .val-status-ok      { color: #4ade80; }
-    .val-status-empty   { color: #fbbf24; }
-    .val-status-error   { color: #f87171; }
-    .val-status-timeout { color: #fb923c; }
-    .val-status-pending { color: #475569; }
+    .val-status-ok         { color: #4ade80; }
+    .val-status-ok-browser { color: #34d399; }
+    .val-status-empty      { color: #fbbf24; }
+    .val-status-error      { color: #f87171; }
+    .val-status-timeout    { color: #fb923c; }
+    .val-status-pending    { color: #475569; }
     .val-edit-btn { background: #252836; border: 1px solid #2d3148; border-radius: 5px; padding: 2px 6px; font-size: 12px; color: #64748b; cursor: pointer; transition: all 0.15s; line-height: 1; }
     .val-edit-btn:hover { background: #818cf8; border-color: #818cf8; color: #fff; }
+    .val-toggle-btn { background: none; border: none; color: #475569; cursor: pointer; font-size: 10px; padding: 2px 4px; line-height: 1; transition: color 0.15s; flex-shrink: 0; }
+    .val-toggle-btn:hover { color: #94a3b8; }
+
+    /* Keyword filter UI */
+    .kw-section { margin-bottom: 20px; }
+    .kw-section-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+    .kw-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 28px; }
+    .kw-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .kw-pill-include { background: rgba(129,140,248,0.15); border: 1px solid rgba(129,140,248,0.3); color: #a5b4fc; }
+    .kw-pill-exclude { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.25); color: #fca5a5; }
+    .kw-pill-remove { background: none; border: none; cursor: pointer; color: inherit; opacity: 0.5; padding: 0; font-size: 13px; line-height: 1; transition: opacity 0.15s; }
+    .kw-pill-remove:hover { opacity: 1; }
+    .kw-add-row { display: flex; gap: 8px; }
+    .kw-add-row input { flex: 1; padding: 7px 12px; font-size: 13px; }
+    .kw-add-row .btn { flex-shrink: 0; }
+    .val-detail { padding: 8px 12px 10px 18px; margin: 0 6px 4px; border-left: 2px solid #2d3148; border-radius: 0 0 6px 6px; font-size: 11.5px; line-height: 1.6; }
+    .val-detail-ok      { border-left-color: #4ade80; color: #94a3b8; }
+    .val-detail-warn    { border-left-color: #fbbf24; color: #d4a017; }
+    .val-detail-error   { border-left-color: #f87171; color: #fca5a5; }
+    .val-detail-timeout { border-left-color: #fb923c; color: #fdba74; }
+    .val-detail .detail-code { font-family: monospace; background: #0f1117; padding: 1px 5px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
 
     /* Company edit modal */
     .edit-modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px; padding: 28px; width: 520px; max-width: 95vw; }
@@ -292,6 +314,9 @@
     <button class="nav-btn" :class="{active: page==='found'}" @click="page='found'; loadFoundJobs()">
       <span class="nav-icon">🔍</span> Found Jobs
       <span x-show="foundJobs.total > 0" x-text="foundJobs.total" style="margin-left:auto; background:#252836; border-radius:10px; padding:1px 7px; font-size:11px; color:#818cf8;"></span>
+    </button>
+    <button class="nav-btn" :class="{active: page==='analytics'}" @click="page='analytics'; if(!foundJobs.analytics) loadFoundJobsAnalytics(); if(!scout.companies.length) loadScout()">
+      <span class="nav-icon">📊</span> Analytics
     </button>
     <button class="nav-btn" :class="{active: page==='analyze'}" @click="page='analyze'">
       <span class="nav-icon">🎯</span> Analyze
@@ -411,141 +436,7 @@
         <div class="flex gap-2 items-center">
           <span class="text-sm text-muted" x-text="foundJobs.total + ' total'"></span>
           <button class="btn btn-ghost btn-sm" @click="loadFoundJobs()">↻ Refresh</button>
-          <button class="btn btn-sm" :class="foundJobs.showAnalytics ? 'btn-primary' : 'btn-ghost'"
-            @click="foundJobs.showAnalytics = !foundJobs.showAnalytics; if(foundJobs.showAnalytics && !foundJobs.analytics) loadFoundJobsAnalytics()">
-            📊 Analytics
-          </button>
         </div>
-      </div>
-
-      <!-- Analytics panel -->
-      <div class="analytics-panel" x-show="foundJobs.showAnalytics" x-cloak>
-        <div x-show="foundJobs.analyticsLoading" class="loading"><span class="spinner"></span> Loading analytics…</div>
-        <template x-if="foundJobs.analytics && !foundJobs.analyticsLoading">
-          <div>
-            <!-- Summary stats -->
-            <div class="analytics-stat-row">
-              <div class="analytics-stat">
-                <div class="analytics-stat-value" x-text="foundJobs.analytics.total"></div>
-                <div class="analytics-stat-label">Total Found</div>
-              </div>
-              <div class="analytics-stat">
-                <div class="analytics-stat-value" x-text="foundJobs.analytics.parsed"></div>
-                <div class="analytics-stat-label">Parsed</div>
-              </div>
-              <div class="analytics-stat">
-                <div class="analytics-stat-value" x-text="foundJobs.analytics.avg_yoe ?? '—'"></div>
-                <div class="analytics-stat-label">Avg Min YOE</div>
-              </div>
-              <div class="analytics-stat">
-                <div class="analytics-stat-value" x-text="foundJobs.analytics.jobs_with_comp"></div>
-                <div class="analytics-stat-label">With Comp</div>
-              </div>
-              <div class="analytics-stat">
-                <div class="analytics-stat-value" x-text="foundJobs.analytics.in_pipeline"></div>
-                <div class="analytics-stat-label">In Pipeline</div>
-              </div>
-            </div>
-
-            <!-- Breakdowns -->
-            <div class="analytics-cols">
-              <!-- Top Companies -->
-              <div>
-                <div class="analytics-col-title">Top Companies</div>
-                <template x-for="co in foundJobs.analytics.top_companies" :key="co.name">
-                  <div class="analytics-bar-row">
-                    <span class="analytics-bar-label" :title="co.name" x-text="co.name"></span>
-                    <div class="analytics-bar-track">
-                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(co.count, foundJobs.analytics.top_companies[0].count)}`"></div>
-                    </div>
-                    <span class="analytics-bar-count" x-text="co.count"></span>
-                  </div>
-                </template>
-              </div>
-
-              <!-- Top Title Keywords -->
-              <div>
-                <div class="analytics-col-title">Title Keywords</div>
-                <template x-for="kw in foundJobs.analytics.top_keywords" :key="kw.keyword">
-                  <div class="analytics-bar-row">
-                    <span class="analytics-bar-label" x-text="kw.keyword"></span>
-                    <div class="analytics-bar-track">
-                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(kw.count, foundJobs.analytics.top_keywords[0].count)}`" style="background:#34d399;"></div>
-                    </div>
-                    <span class="analytics-bar-count" x-text="kw.count"></span>
-                  </div>
-                </template>
-              </div>
-
-              <!-- YOE Distribution -->
-              <div>
-                <div class="analytics-col-title">Experience Level</div>
-                <template x-for="[bucket, count] in Object.entries(foundJobs.analytics.yoe_distribution || {})" :key="bucket">
-                  <div class="analytics-bar-row">
-                    <span class="analytics-bar-label" x-text="bucket"></span>
-                    <div class="analytics-bar-track">
-                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(count, Math.max(...Object.values(foundJobs.analytics.yoe_distribution)))}; background:#fbbf24;`"></div>
-                    </div>
-                    <span class="analytics-bar-count" x-text="count"></span>
-                  </div>
-                </template>
-                <div class="text-xs text-muted mt-2" x-text="`${foundJobs.analytics.yoe_coverage} of ${foundJobs.analytics.total} jobs have YOE data`"></div>
-              </div>
-            </div>
-            <!-- Company Validation Panel -->
-            <div class="validation-panel">
-              <div class="flex justify-between items-center mb-3">
-                <div>
-                  <div class="analytics-col-title" style="margin-bottom:2px;">Company Scrape Validation</div>
-                  <div class="text-xs text-muted" x-text="(scout.companies || []).length + ' companies configured'"></div>
-                </div>
-                <button class="btn btn-sm" :class="foundJobs.validating ? 'btn-ghost' : 'btn-primary'"
-                  @click="validateCompanies()" :disabled="foundJobs.validating">
-                  <span x-show="!foundJobs.validating">🔍 Run Validation</span>
-                  <span x-show="foundJobs.validating" class="loading"><span class="spinner"></span> Validating…</span>
-                </button>
-              </div>
-
-              <!-- Legend -->
-              <div x-show="foundJobs.validationResults" class="flex gap-3 mb-3" style="font-size:11px;">
-                <span class="val-status val-status-ok">✓ reachable</span>
-                <span class="val-status val-status-empty">⚠ 0 open jobs</span>
-                <span class="val-status val-status-error">✗ error / 404</span>
-                <span class="val-status val-status-timeout">⏱ timeout</span>
-                <span class="text-muted" x-text="Object.values(foundJobs.validationResults).filter(r=>r.status==='error'||r.status==='timeout').length + ' issues found'"></span>
-              </div>
-
-              <div class="form-row mb-2">
-                <input x-model="foundJobs.validationSearch" placeholder="Filter by name, ATS, or ID…" style="margin-bottom:0;" />
-              </div>
-              <div style="max-height: 440px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
-                <div class="val-header">
-                  <span>Company</span>
-                  <span>ATS</span>
-                  <span>Scrape URL</span>
-                  <span style="text-align:right;">In DB</span>
-                  <span>Live Check</span>
-                  <span></span>
-                  <span></span>
-                </div>
-                <template x-for="co in filteredValidationCompanies" :key="co.name">
-                  <div class="val-row" :class="valRowClass(co.name)">
-                    <span class="val-name" :title="co.name" x-text="co.name"></span>
-                    <span :class="'ats-pill ats-' + co.ats" x-text="co.ats"></span>
-                    <a class="val-url" :href="getCompanyScrapeUrl(co)" target="_blank" :title="getCompanyScrapeUrl(co)" x-text="getCompanyScrapeUrl(co)"></a>
-                    <span class="val-count" x-text="(foundJobs.analytics?.company_job_counts?.[co.name] ?? 0)"></span>
-                    <span class="val-status" :class="valStatusClass(co.name)" x-text="valStatusText(co.name)"></span>
-                    <span class="val-dot" :class="co.enabled !== false ? 'val-dot-on' : 'val-dot-off'" :title="co.enabled !== false ? 'Enabled' : 'Disabled'"></span>
-                    <button class="val-edit-btn" @click="openCompanyEdit(co)" title="Edit">✏</button>
-                  </div>
-                </template>
-                <div class="text-muted text-sm" style="padding: 12px 6px;" x-show="filteredValidationCompanies.length === 0">
-                  No companies match your filter.
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
       </div>
 
       <!-- Filters -->
@@ -723,6 +614,272 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- ANALYTICS PAGE -->
+    <div x-show="page==='analytics'">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <div class="page-title">Analytics</div>
+          <div class="page-sub">Job market insights and company scrape validation</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="foundJobs.analytics = null; loadFoundJobsAnalytics()" :disabled="foundJobs.analyticsLoading">↻ Refresh</button>
+      </div>
+
+      <div x-show="foundJobs.analyticsLoading" class="loading" style="margin: 40px 0;"><span class="spinner"></span> Loading analytics…</div>
+
+      <template x-if="foundJobs.analytics && !foundJobs.analyticsLoading">
+        <div>
+          <!-- Summary stats -->
+          <div class="analytics-stat-row" style="margin-bottom:24px;">
+            <div class="analytics-stat">
+              <div class="analytics-stat-value" x-text="foundJobs.analytics.total"></div>
+              <div class="analytics-stat-label">Total Found</div>
+            </div>
+            <div class="analytics-stat">
+              <div class="analytics-stat-value" x-text="foundJobs.analytics.parsed"></div>
+              <div class="analytics-stat-label">Parsed</div>
+            </div>
+            <div class="analytics-stat">
+              <div class="analytics-stat-value" x-text="foundJobs.analytics.avg_yoe ?? '—'"></div>
+              <div class="analytics-stat-label">Avg Min YOE</div>
+            </div>
+            <div class="analytics-stat">
+              <div class="analytics-stat-value" x-text="foundJobs.analytics.jobs_with_comp"></div>
+              <div class="analytics-stat-label">With Comp</div>
+            </div>
+            <div class="analytics-stat">
+              <div class="analytics-stat-value" x-text="foundJobs.analytics.in_pipeline"></div>
+              <div class="analytics-stat-label">In Pipeline</div>
+            </div>
+          </div>
+
+          <!-- Breakdowns -->
+          <div class="analytics-panel" style="margin-bottom:24px;">
+            <div class="analytics-cols">
+              <div>
+                <div class="analytics-col-title">Top Companies</div>
+                <template x-for="co in foundJobs.analytics.top_companies" :key="co.name">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" :title="co.name" x-text="co.name"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(co.count, foundJobs.analytics.top_companies[0].count)}`"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="co.count"></span>
+                  </div>
+                </template>
+              </div>
+              <div>
+                <div class="analytics-col-title">Title Keywords</div>
+                <template x-for="kw in foundJobs.analytics.top_keywords" :key="kw.keyword">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" x-text="kw.keyword"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(kw.count, foundJobs.analytics.top_keywords[0].count)}; background:#34d399;`"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="kw.count"></span>
+                  </div>
+                </template>
+              </div>
+              <div>
+                <div class="analytics-col-title">Experience Level</div>
+                <template x-for="[bucket, count] in Object.entries(foundJobs.analytics.yoe_distribution || {})" :key="bucket">
+                  <div class="analytics-bar-row">
+                    <span class="analytics-bar-label" x-text="bucket"></span>
+                    <div class="analytics-bar-track">
+                      <div class="analytics-bar-fill" :style="`width: ${analyticsBarWidth(count, Math.max(...Object.values(foundJobs.analytics.yoe_distribution)))}; background:#fbbf24;`"></div>
+                    </div>
+                    <span class="analytics-bar-count" x-text="count"></span>
+                  </div>
+                </template>
+                <div class="text-xs text-muted mt-2" x-text="`${foundJobs.analytics.yoe_coverage} of ${foundJobs.analytics.total} jobs have YOE data`"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Job Filters Card -->
+          <div class="card" style="margin-bottom:24px;" x-data="{
+            include: [],
+            exclude: [],
+            newInclude: '',
+            newExclude: '',
+            saving: false,
+            dirty: false,
+            async load() {
+              const r = await fetch('/config/keywords');
+              const d = await r.json();
+              this.include = [...d.include];
+              this.exclude = [...d.exclude];
+              this.dirty = false;
+            },
+            removeInclude(kw) { this.include = this.include.filter(k => k !== kw); this.dirty = true; },
+            removeExclude(kw) { this.exclude = this.exclude.filter(k => k !== kw); this.dirty = true; },
+            addInclude() {
+              const v = this.newInclude.trim().toLowerCase();
+              if (v && !this.include.includes(v)) { this.include.push(v); this.dirty = true; }
+              this.newInclude = '';
+            },
+            addExclude() {
+              const v = this.newExclude.trim().toLowerCase();
+              if (v && !this.exclude.includes(v)) { this.exclude.push(v); this.dirty = true; }
+              this.newExclude = '';
+            },
+            async save() {
+              this.saving = true;
+              await fetch('/config/keywords', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ include: this.include, exclude: this.exclude }),
+              });
+              this.dirty = false;
+              this.saving = false;
+            }
+          }" x-init="load()">
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f1f5f9; margin-bottom:3px;">Job Filters</div>
+                <div class="text-xs text-muted">Keywords used to match job titles on career pages. Changes apply to the next scan.</div>
+              </div>
+              <button class="btn btn-primary btn-sm" @click="save()" :disabled="!dirty || saving">
+                <span x-show="!saving">💾 Save Changes</span>
+                <span x-show="saving" class="loading"><span class="spinner"></span> Saving…</span>
+              </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+              <!-- Include keywords -->
+              <div class="kw-section">
+                <div class="kw-section-title">✓ Include — match any of these</div>
+                <div class="kw-pills">
+                  <template x-for="kw in include" :key="kw">
+                    <span class="kw-pill kw-pill-include">
+                      <span x-text="kw"></span>
+                      <button class="kw-pill-remove" @click="removeInclude(kw)" title="Remove">×</button>
+                    </span>
+                  </template>
+                  <span x-show="include.length === 0" class="text-xs text-muted" style="padding:4px 0;">No include keywords — all jobs will be skipped</span>
+                </div>
+                <div class="kw-add-row">
+                  <input x-model="newInclude" placeholder="e.g. data engineer"
+                    @keydown.enter="addInclude()"
+                    style="background:#0f1117; border:1px solid #2d3148; border-radius:8px; color:#e2e8f0;" />
+                  <button class="btn btn-ghost btn-sm" @click="addInclude()">+ Add</button>
+                </div>
+              </div>
+
+              <!-- Exclude keywords -->
+              <div class="kw-section">
+                <div class="kw-section-title">✗ Exclude — skip if title contains any of these</div>
+                <div class="kw-pills">
+                  <template x-for="kw in exclude" :key="kw">
+                    <span class="kw-pill kw-pill-exclude">
+                      <span x-text="kw"></span>
+                      <button class="kw-pill-remove" @click="removeExclude(kw)" title="Remove">×</button>
+                    </span>
+                  </template>
+                  <span x-show="exclude.length === 0" class="text-xs text-muted" style="padding:4px 0;">No exclusions — all matching titles are kept</span>
+                </div>
+                <div class="kw-add-row">
+                  <input x-model="newExclude" placeholder="e.g. intern"
+                    @keydown.enter="addExclude()"
+                    style="background:#0f1117; border:1px solid #2d3148; border-radius:8px; color:#e2e8f0;" />
+                  <button class="btn btn-ghost btn-sm" @click="addExclude()">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top:16px; padding-top:14px; border-top:1px solid #2d3148; font-size:12px; color:#475569; line-height:1.7;">
+              <strong style="color:#64748b;">How matching works:</strong>
+              A job title is kept if it contains <em>any</em> include keyword (substring match, case-insensitive)
+              and does <em>not</em> contain any exclude keyword. Matching runs on the link text scraped directly
+              from each company's career page — before any ATS API call.
+              <br>
+              <strong style="color:#64748b;">Tip:</strong> Use specific phrases like <code style="background:#1a1d27;padding:1px 5px;border-radius:3px;">"solutions engineer"</code>
+              rather than broad words like <code style="background:#1a1d27;padding:1px 5px;border-radius:3px;">"engineer"</code> to avoid noise.
+            </div>
+          </div>
+
+          <!-- Company Validation Panel -->
+          <div class="card">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f1f5f9; margin-bottom:3px;">Company Scrape Validation</div>
+                <div class="text-xs text-muted" x-text="(scout.companies || []).length + ' companies configured'"></div>
+              </div>
+              <button class="btn btn-sm" :class="foundJobs.validating ? 'btn-ghost' : 'btn-primary'"
+                @click="validateCompanies()" :disabled="foundJobs.validating">
+                <span x-show="!foundJobs.validating">🔍 Run Validation</span>
+                <span x-show="foundJobs.validating" class="loading"><span class="spinner"></span> Validating…</span>
+              </button>
+            </div>
+
+            <!-- Legend -->
+            <div x-show="foundJobs.validationResults" class="flex gap-3 mb-3" style="font-size:11px; flex-wrap:wrap;">
+              <span class="val-status val-status-ok">✓ reachable</span>
+              <span class="val-status val-status-ok-browser">✓ browser only</span>
+              <span class="val-status val-status-error">✗ error / 404</span>
+              <span class="val-status val-status-timeout">⏱ timeout</span>
+              <span class="text-muted" x-text="Object.values(foundJobs.validationResults).filter(r=>r.status==='error'||r.status==='timeout'||r.status==='no_url').length + ' issues found'"></span>
+            </div>
+
+            <div class="form-row mb-2">
+              <input x-model="foundJobs.validationSearch" placeholder="Filter by company name or URL…" style="margin-bottom:0;" />
+            </div>
+
+            <div style="max-height: 560px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
+              <div class="val-header">
+                <span>Company</span>
+                <span>ATS</span>
+                <span>Scrape URL</span>
+                <span style="text-align:right;">In DB</span>
+                <span>Live Check</span>
+                <span></span>
+                <span></span>
+              </div>
+              <template x-for="co in filteredValidationCompanies" :key="co.name">
+                <div x-data="{ open: false, scraping: false, scrapeResult: null }">
+                  <div class="val-row" :class="valRowClass(co.name)">
+                    <span class="val-name" :title="co.name" x-text="co.name"></span>
+                    <span :class="'ats-pill ats-' + co.ats" x-text="co.ats"></span>
+                    <a class="val-url" :href="getCompanyScrapeUrl(co)" target="_blank" :title="getCompanyScrapeUrl(co)" x-text="getCompanyScrapeUrl(co)"></a>
+                    <span class="val-count" x-text="(foundJobs.analytics?.company_job_counts?.[co.name] ?? 0)"></span>
+                    <span class="val-status" :class="valStatusClass(co.name)" x-text="valStatusText(co.name)"></span>
+                    <span class="val-dot" :class="co.enabled !== false ? 'val-dot-on' : 'val-dot-off'" :title="co.enabled !== false ? 'Enabled' : 'Disabled'"></span>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                      <button class="val-toggle-btn"
+                        x-show="foundJobs.validationResults?.[co.name]"
+                        @click="open = !open"
+                        :title="open ? 'Hide details' : 'Show details'"
+                        x-text="open ? '▼' : '▶'"></button>
+                      <button class="val-edit-btn" title="Re-scrape this company"
+                        :disabled="scraping"
+                        @click="scraping=true; scrapeResult=null; scrapeCompany(co.name).then(r=>{scrapeResult=r; scraping=false; foundJobs.analytics=null; loadFoundJobsAnalytics();})">
+                        <span x-show="!scraping">▶</span>
+                        <span x-show="scraping" class="spinner" style="width:9px;height:9px;border-width:2px;display:inline-block;"></span>
+                      </button>
+                      <button class="val-edit-btn" @click="openCompanyEdit(co)" title="Edit">✏</button>
+                    </div>
+                  </div>
+                  <!-- Scrape result -->
+                  <div x-show="scrapeResult" style="padding:4px 12px 6px 18px; font-size:11px; border-left: 2px solid #2d3148; margin: 0 6px 2px;">
+                    <span x-show="scrapeResult?.jobs_new > 0" style="color:#4ade80;" x-text="`+${scrapeResult?.jobs_new} new job(s) added`"></span>
+                    <span x-show="scrapeResult?.jobs_new === 0 && !scrapeResult?.error" style="color:#64748b;" x-text="`${scrapeResult?.jobs_found ?? 0} job(s) found — all already in DB`"></span>
+                    <span x-show="scrapeResult?.error" style="color:#f87171;" x-text="'Error: ' + scrapeResult?.error"></span>
+                  </div>
+                  <!-- Validation detail -->
+                  <div x-show="open && foundJobs.validationResults?.[co.name]"
+                       :class="'val-detail val-detail-' + valDetailType(co.name)"
+                       x-html="valDetailHtml(co.name)">
+                  </div>
+                </div>
+              </template>
+              <div class="text-muted text-sm" style="padding: 12px 6px;" x-show="filteredValidationCompanies.length === 0">
+                No companies match your filter.
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ANALYZE PAGE -->
@@ -1323,6 +1480,9 @@ function app() {
             await this.loadJobs();
             await this.loadScoutRuns();
             await this.loadFoundJobs();
+            // Refresh analytics so totals reflect new jobs
+            this.foundJobs.analytics = null;
+            if (this.foundJobs.showAnalytics) await this.loadFoundJobsAnalytics();
             this.showToast(`Scan done — ${this.scout.status.last_result.jobs_new ?? 0} new job(s)`);
           }
         }, 4000);
@@ -1395,8 +1555,7 @@ function app() {
     editTestResultText() {
       const r = this.foundJobs.editTestResult;
       if (!r) return '';
-      if (r.status === 'ok')      return `✓ Reachable — ${r.total_jobs} total jobs`;
-      if (r.status === 'empty')   return '⚠ Reachable but 0 open jobs';
+      if (r.status === 'ok')      return `✓ Reachable (HTTP ${r.http_status})`;
       if (r.status === 'timeout') return '⏱ Request timed out';
       if (r.status === 'no_url')  return '⚠ No URL configured';
       return `✗ Error ${r.http_status || ''}${r.error ? ' — ' + r.error : ''}`;
@@ -1406,11 +1565,11 @@ function app() {
       this.foundJobs.editTesting = true;
       this.foundJobs.editTestResult = null;
       try {
-        const { ats, id, url } = this.foundJobs.editForm;
+        const { url } = this.foundJobs.editForm;
         const res = await fetch('/scrape/validate/one', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: this.foundJobs.editingCompany?.name || 'test', ats, id, url }),
+          body: JSON.stringify({ name: this.foundJobs.editingCompany?.name || 'test', url }),
         });
         this.foundJobs.editTestResult = await res.json();
       } catch(e) {
@@ -1448,6 +1607,15 @@ function app() {
       }
     },
 
+    async scrapeCompany(name) {
+      try {
+        const res = await fetch(`/scrape/company/${encodeURIComponent(name)}`, { method: 'POST' });
+        return await res.json();
+      } catch(e) {
+        return { error: e.message };
+      }
+    },
+
     async validateCompanies() {
       this.foundJobs.validating = true;
       this.foundJobs.validationResults = null;
@@ -1467,38 +1635,100 @@ function app() {
     valStatusClass(name) {
       const r = this.foundJobs.validationResults?.[name];
       if (!r) return 'val-status-pending';
-      if (r.status === 'ok')      return 'val-status-ok';
-      if (r.status === 'empty')   return 'val-status-empty';
-      if (r.status === 'timeout') return 'val-status-timeout';
+      if (r.status === 'ok')         return 'val-status-ok';
+      if (r.status === 'ok_browser') return 'val-status-ok-browser';
+      if (r.status === 'empty')      return 'val-status-empty';
+      if (r.status === 'timeout')    return 'val-status-timeout';
       return 'val-status-error';
     },
 
     valStatusText(name) {
       const r = this.foundJobs.validationResults?.[name];
       if (!r) return '—';
-      if (r.status === 'ok')      return `✓ ${r.total_jobs ?? ''} jobs`;
-      if (r.status === 'empty')   return '⚠ 0 open';
-      if (r.status === 'timeout') return '⏱ timeout';
-      if (r.status === 'no_url')  return '⚠ no URL';
+      if (r.status === 'ok')         return `✓ ${r.http_status}`;
+      if (r.status === 'ok_browser') return `✓ browser ${r.browser_http_status}`;
+      if (r.status === 'timeout')    return '⏱ timeout';
+      if (r.status === 'no_url')     return '⚠ no URL';
       return `✗ ${r.http_status || 'err'}`;
     },
 
     valRowClass(name) {
       const r = this.foundJobs.validationResults?.[name];
       if (!r) return '';
-      if (r.status === 'error' || r.status === 'timeout') return 'val-err';
-      if (r.status === 'empty') return 'val-warn';
+      if (r.status === 'error' || r.status === 'timeout' || r.status === 'no_url') return 'val-err';
       return '';
     },
 
-    getCompanyScrapeUrl(co) {
-      const id = co.id || '';
-      switch (co.ats) {
-        case 'greenhouse': return `https://boards.greenhouse.io/embed/job_board/json?for=${id}`;
-        case 'lever':      return `https://api.lever.co/v0/postings/${id}?mode=json`;
-        case 'ashby':      return `https://jobs.ashbyhq.com/${id}`;
-        default:           return co.url || '';
+    valDetailType(name) {
+      const r = this.foundJobs.validationResults?.[name];
+      if (!r) return 'ok';
+      if (r.status === 'ok')         return 'ok';
+      if (r.status === 'ok_browser') return 'ok';
+      if (r.status === 'timeout')    return 'timeout';
+      if (r.status === 'no_url')     return 'warn';
+      return 'error';
+    },
+
+    valDetailHtml(name) {
+      const r = this.foundJobs.validationResults?.[name];
+      if (!r) return '';
+
+      const code = r.http_status;
+      const err  = r.error ? ` — ${r.error}` : '';
+
+      if (r.status === 'ok') {
+        return `<span class="detail-code">${code}</span> Career page is reachable. The Playwright scraper should be able to render and extract job links.`;
       }
+
+      if (r.status === 'ok_browser') {
+        return `<span class="detail-code">HTTP ${code}</span> Initial HTTP check was blocked (bot-detection), but the ` +
+               `<strong>Playwright browser check passed</strong> <span class="detail-code">${r.browser_http_status}</span>. ` +
+               `The scraper uses a real Chromium browser and should work fine for this company.`;
+      }
+
+      if (r.status === 'no_url') {
+        return '⚠ No career page URL is configured for this company. Add one using the ✏ edit button.';
+      }
+
+      if (r.status === 'timeout') {
+        return '⏱ The HTTP request timed out (15 s). The server may be slow or actively dropping automated connections. ' +
+               'The Playwright scraper uses a real browser and may still succeed — try running a scan to confirm.';
+      }
+
+      // status === 'error'
+      // If browser was also checked and also failed, say so explicitly
+      let browserNote = '';
+      if (r.browser_checked) {
+        const bCode = r.browser_http_status;
+        const bErr  = r.browser_error ? ` (${r.browser_error})` : '';
+        browserNote = `<br><strong>Browser check also failed</strong> <span class="detail-code">${bCode || 'ERR'}</span>${bErr}. ` +
+                      `This page is likely behind a hard auth wall or the URL is wrong.`;
+      }
+
+      const hints = {
+        400: 'Bad Request — the server rejected the request. The URL may be malformed.',
+        401: 'Unauthorized — the page requires authentication and cannot be scraped publicly.',
+        403: 'Forbidden — the server blocked the automated HTTP request (bot-detection). ' +
+             `A browser check was performed automatically.${browserNote || ' See browser result above.'}`,
+        404: 'Not Found — the career page URL does not exist. The URL may have moved or be incorrect. Use ✏ to update it.',
+        410: 'Gone — the page has been permanently removed. Update the URL using ✏.',
+        429: 'Too Many Requests — the server is rate-limiting. ' +
+             `A browser check was performed automatically.${browserNote || ' See browser result above.'}`,
+        500: 'Internal Server Error — the careers site is experiencing server-side issues. Try again later.',
+        502: 'Bad Gateway — the server returned an invalid response. This is usually temporary.',
+        503: 'Service Unavailable — the server may be overloaded or enforcing bot-detection. ' +
+             `A browser check was performed automatically.${browserNote || ' See browser result above.'}`,
+      };
+
+      const hint = (hints[code] || (code ? `HTTP ${code} error${err}.` : `Connection error${err}.`))
+                   + (browserNote && !hints[code] ? browserNote : '');
+
+      return `<span class="detail-code">${code || 'ERR'}</span> ${hint}`;
+    },
+
+    getCompanyScrapeUrl(co) {
+      // Scraper navigates directly to the career page URL for all companies.
+      return co.url || '';
     },
 
     get filteredValidationCompanies() {
@@ -1507,8 +1737,7 @@ function app() {
       if (!q) return companies;
       return companies.filter(c =>
         c.name.toLowerCase().includes(q) ||
-        c.ats.toLowerCase().includes(q) ||
-        (c.id || '').toLowerCase().includes(q)
+        (c.url || '').toLowerCase().includes(q)
       );
     },
 
