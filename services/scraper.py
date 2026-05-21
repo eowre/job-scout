@@ -177,6 +177,32 @@ def _detect_ats(url: str) -> Tuple[str, str, str]:
     return ATS_GENERIC, "", ""
 
 
+def _is_ats_board(url: str) -> bool:
+    """
+    Return True if url points to an ATS board/listing page rather than an
+    individual job posting.
+
+    An ATS board URL is on a known ATS host but does NOT match any of the
+    individual-job patterns (which all require a job-ID path segment).
+
+    Examples:
+      boards.greenhouse.io/acme              → True  (board)
+      boards.greenhouse.io/acme/jobs/12345   → False (individual job)
+      jobs.lever.co/acme                     → True  (board)
+      jobs.lever.co/acme/some-uuid           → False (individual job)
+      jobs.ashbyhq.com/pylon-labs            → True  (board)
+      jobs.ashbyhq.com/pylon-labs/some-uuid  → False (individual job)
+    """
+    if not url:
+        return False
+    # If it already matches an individual job pattern it is NOT a board
+    if _GH_PATTERN.match(url) or _LV_PATTERN.match(url) or _ASH_PATTERN.match(url):
+        return False
+    # On a known ATS host but no job-ID → board-level page
+    parsed = urlparse(url)
+    return any(host in parsed.netloc for host in _ATS_HOSTS)
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — Playwright: render career page, extract matching job links
 # ---------------------------------------------------------------------------
@@ -620,6 +646,48 @@ async def _scrape_company(
                 reason = f"excluded by {_excl!r}" if _excl else ("no include match" if not _incl else f"excluded by {_excl!r}")
                 _dlog(co_name, f"  SKIP   {_t!r}  ({reason})")
         _dlog(co_name, f"  → {len(matching)} matched out of {len(all_links)} links")
+
+    # --- Step 1.5: ATS board expansion ---
+    # Career pages sometimes link to an ATS board homepage rather than individual
+    # job pages — either because the link text matched a keyword (e.g. "Engineering
+    # Roles" → boards.greenhouse.io/acme) or because the board link text didn't
+    # match any keyword at all.  Detect every board-level ATS URL in all_links,
+    # navigate into it, collect the real job-level links, and add any that pass
+    # keyword filtering to `matching`.
+    board_urls = {u for _, u in all_links if _is_ats_board(u)}
+    if board_urls:
+        seen_job_urls = {u for _, u in matching}
+        _dlog(co_name, f"BOARD EXPANSION: {len(board_urls)} board-level ATS URL(s) in page links")
+
+        for board_url in board_urls:
+            logger.debug(f"[{co_name}] Board-level ATS URL detected → {board_url}")
+            _dlog(co_name, f"  navigating into board: {board_url}")
+
+            async with browser_sem:
+                ctx = await browser.new_context(
+                    user_agent=_HEADERS["User-Agent"],
+                    java_script_enabled=True,
+                    ignore_https_errors=True,
+                )
+                try:
+                    board_job_links = await _get_job_links(ctx, board_url, co_name)
+                finally:
+                    await ctx.close()
+
+            # Drop the board URL from matching (replace it with real job URLs)
+            matching = [(t, u) for t, u in matching if u != board_url]
+
+            # Add any keyword-matching individual job links not already seen
+            new_matches = [
+                (t, u) for t, u in board_job_links
+                if _matches(t) and u not in seen_job_urls
+            ]
+            matching.extend(new_matches)
+            seen_job_urls.update(u for _, u in new_matches)
+
+            _dlog(co_name, f"  → {len(board_job_links)} links on board, {len(new_matches)} new keyword match(es)")
+            if new_matches:
+                logger.info(f"[{co_name}] Board expansion added {len(new_matches)} job(s) from {board_url}")
 
     if not matching:
         logger.debug(f"[{co_name}] No matching job titles found")

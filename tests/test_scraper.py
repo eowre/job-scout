@@ -15,6 +15,7 @@ from services.scraper import (
     _detect_ats,
     _find_open_roles_link,
     _html_to_text,
+    _is_ats_board,
     _matches,
     _parse_iso,
     _parse_ms,
@@ -375,3 +376,53 @@ class TestFindOpenRolesLink:
     def test_case_insensitive(self):
         pairs = self._pairs(("VIEW ALL JOBS", "https://acme.com/jobs"))
         assert _find_open_roles_link(pairs, self.BASE) is not None
+
+
+# ---------------------------------------------------------------------------
+# _is_ats_board
+# ---------------------------------------------------------------------------
+
+class TestIsAtsBoard:
+    # --- Greenhouse ---
+    def test_gh_board_is_board(self):
+        assert _is_ats_board("https://boards.greenhouse.io/acme") is True
+
+    def test_gh_board_trailing_slash(self):
+        assert _is_ats_board("https://boards.greenhouse.io/acme/") is True
+
+    def test_gh_board_with_query(self):
+        # department filter is still a board page, not a job
+        assert _is_ats_board("https://boards.greenhouse.io/acme?department=Engineering") is True
+
+    def test_gh_individual_job_is_not_board(self):
+        assert _is_ats_board("https://boards.greenhouse.io/acme/jobs/12345") is False
+
+    def test_gh_new_domain_board(self):
+        assert _is_ats_board("https://job-boards.greenhouse.io/acme") is True
+
+    def test_gh_new_domain_individual_job(self):
+        assert _is_ats_board("https://job-boards.greenhouse.io/acme/jobs/99999") is False
+
+    # --- Lever ---
+    def test_lv_board_is_board(self):
+        assert _is_ats_board("https://jobs.lever.co/acme") is True
+
+    def test_lv_individual_job_is_not_board(self):
+        assert _is_ats_board("https://jobs.lever.co/acme/some-uuid-1234") is False
+
+    # --- Ashby ---
+    def test_ash_board_is_board(self):
+        assert _is_ats_board("https://jobs.ashbyhq.com/pylon-labs") is True
+
+    def test_ash_individual_job_is_not_board(self):
+        assert _is_ats_board("https://jobs.ashbyhq.com/pylon-labs/some-uuid") is False
+
+    # --- Non-ATS ---
+    def test_non_ats_is_not_board(self):
+        assert _is_ats_board("https://acme.com/careers") is False
+
+    def test_empty_string(self):
+        assert _is_ats_board("") is False
+
+    def test_linkedin_is_not_board(self):
+        assert _is_ats_board("https://linkedin.com/company/acme/jobs") is False

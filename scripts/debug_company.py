@@ -38,6 +38,7 @@ from services.scraper import (
     _BOT_BLOCKED_CODES,
     _get_job_links,
     _find_open_roles_link,
+    _is_ats_board,
     _parse_raw_links,
     _load_and_wait,
     _detect_ats,
@@ -256,6 +257,62 @@ async def debug_company(
     print()
     _info(f"Result: {_BOLD}{len(matching)} matched{_RESET} / {len(all_links)} total links")
 
+    # -----------------------------------------------------------------------
+    # Stage 2.5 — ATS board expansion
+    # -----------------------------------------------------------------------
+    _h("STAGE 2.5 — ATS board expansion")
+
+    board_urls = {u for _, u in all_links if _is_ats_board(u)}
+    if not board_urls:
+        _dim("No board-level ATS URLs found in page links — skipping")
+    else:
+        _info(f"Found {len(board_urls)} board-level ATS URL(s):")
+        seen_job_urls = {u for _, u in matching}
+
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            for board_url in board_urls:
+                ats_label = (
+                    "greenhouse" if "greenhouse.io" in board_url else
+                    "lever"      if "lever.co"      in board_url else
+                    "ashby"      if "ashbyhq.com"   in board_url else
+                    "ats"
+                )
+                _info(f"  [{ats_label}] {board_url}")
+                context = await browser.new_context(
+                    user_agent=_HEADERS["User-Agent"],
+                    java_script_enabled=True,
+                    ignore_https_errors=True,
+                )
+                try:
+                    board_job_links = await _get_job_links(context, board_url, co_name)
+                finally:
+                    await context.close()
+
+                # Remove the board URL from matching if it slipped through
+                matching = [(t, u) for t, u in matching if u != board_url]
+
+                new_matches = [
+                    (t, u) for t, u in board_job_links
+                    if _matches(t) and u not in seen_job_urls
+                ]
+                matching.extend(new_matches)
+                seen_job_urls.update(u for _, u in new_matches)
+
+                _info(f"    {len(board_job_links)} links on board")
+                if new_matches:
+                    for t, u in new_matches:
+                        _ok(f"    {t:<60s}  [board match]")
+                else:
+                    _dim(f"    0 keyword matches from this board")
+            await browser.close()
+
+    print()
+    _info(f"Matching jobs after board expansion: {_BOLD}{len(matching)}{_RESET}")
+
     if not matching:
         print()
         _warn("No jobs matched your keywords.")
@@ -268,7 +325,7 @@ async def debug_company(
 
     if no_fetch:
         print()
-        _dim("--no-fetch: stopping after keyword filter")
+        _dim("--no-fetch: stopping after board expansion")
         return
 
     # -----------------------------------------------------------------------
