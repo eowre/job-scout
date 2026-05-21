@@ -6,6 +6,7 @@ The Anthropic API is mocked throughout — no real API calls are made.
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anthropic
 import pytest
 
 from ai.parser import _build_prompt, _extract_json, parse_job
@@ -157,3 +158,34 @@ async def test_parse_job_null_yoe():
         result = await parse_job("SWE", "Co", "Description " * 10)
 
     assert result["years_of_experience"] is None
+
+
+@pytest.mark.asyncio
+async def test_parse_job_rate_limit_retries_then_succeeds():
+    """429 on first attempt should retry and succeed on second."""
+    success = _make_response(VALID_RESPONSE)
+    mock_create = AsyncMock(
+        side_effect=[anthropic.RateLimitError("rate limited", response=MagicMock(), body={}), success]
+    )
+    with patch("ai.parser._get_client") as mock_client_fn, \
+         patch("ai.parser.asyncio.sleep", new_callable=AsyncMock):   # skip real sleep
+        mock_client_fn.return_value.messages.create = mock_create
+        result = await parse_job("SWE", "Co", "Description " * 10)
+
+    assert result.get("parsed_summary") is not None
+    assert mock_create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_parse_job_rate_limit_exhausted_returns_empty():
+    """Persistent 429 across all attempts should return {}."""
+    mock_create = AsyncMock(
+        side_effect=anthropic.RateLimitError("rate limited", response=MagicMock(), body={})
+    )
+    with patch("ai.parser._get_client") as mock_client_fn, \
+         patch("ai.parser.asyncio.sleep", new_callable=AsyncMock):
+        mock_client_fn.return_value.messages.create = mock_create
+        result = await parse_job("SWE", "Co", "Description " * 10)
+
+    assert result == {}
+    assert mock_create.call_count == 4   # _RETRY_ATTEMPTS
