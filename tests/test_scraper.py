@@ -369,6 +369,22 @@ class TestFindOpenRolesLink:
         pairs = self._pairs(("Open Roles", "https://acme.com/careers/"))
         assert _find_open_roles_link(pairs, self.BASE) is None
 
+    def test_skips_same_page_hash_fragment(self):
+        # e.g. ramp.com/careers#jobs — same DOM, different hash anchor
+        pairs = self._pairs(("Open Roles", "https://acme.com/careers#jobs"))
+        assert _find_open_roles_link(pairs, self.BASE) is None
+
+    def test_skips_same_page_hash_on_base_with_fragment(self):
+        # Base URL itself has a fragment; candidate with same path but different hash
+        pairs = self._pairs(("All Jobs", "https://acme.com/careers#open"))
+        assert _find_open_roles_link(pairs, "https://acme.com/careers#hero") is None
+
+    def test_follows_different_page_with_hash(self):
+        # A different path that happens to have a fragment should still be followed
+        pairs = self._pairs(("Open Roles", "https://acme.com/jobs#listings"))
+        result = _find_open_roles_link(pairs, self.BASE)
+        assert result == "https://acme.com/jobs#listings"
+
     def test_no_match_returns_none(self):
         pairs = self._pairs(("Home", "https://acme.com/"), ("Blog", "https://acme.com/blog"))
         assert _find_open_roles_link(pairs, self.BASE) is None

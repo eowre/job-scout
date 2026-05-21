@@ -260,17 +260,27 @@ def _find_open_roles_link(pairs: List[Tuple[str, str]], base_url: str) -> Option
 
     Returns the first URL that:
       • has link text matching _OPEN_ROLES_RE
-      • is not the same page we're already on
+      • is not the same page we're already on (fragment-stripped comparison)
       • is on the same domain OR on a known ATS host
     Returns None if no such link is found.
+
+    Hash-fragment-only links (e.g. careers.acme.com#jobs) are explicitly
+    skipped — navigating to a same-page anchor produces an identical DOM and
+    wastes a browser round-trip.  Any board-level ATS URLs hidden inside that
+    section will be caught by the separate _is_ats_board expansion step.
     """
     base_parsed = urlparse(base_url)
+    # Strip fragment for "same page" comparison
+    base_no_frag = base_url.split("#")[0].rstrip("/")
+
     for text, url in pairs:
         if not _OPEN_ROLES_RE.search(text):
             continue
         parsed = urlparse(url)
-        if url.rstrip("/") == base_url.rstrip("/"):
-            continue  # already on this page
+        # Skip same-page links — including hash-anchor variants of the current URL
+        url_no_frag = url.split("#")[0].rstrip("/")
+        if url_no_frag == base_no_frag:
+            continue
         same_domain = parsed.netloc == base_parsed.netloc
         is_ats = any(host in parsed.netloc for host in _ATS_HOSTS)
         if same_domain or is_ats:
