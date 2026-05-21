@@ -24,6 +24,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import logging
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -47,6 +48,22 @@ JOB_KEYWORDS:     list = list(_config.JOB_KEYWORDS)
 EXCLUDE_KEYWORDS: list = list(_config.EXCLUDE_KEYWORDS)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Option D: per-company verbose logging
+#
+# Set SCOUT_DEBUG_COMPANY="Acme Corp" (case-insensitive) before starting the
+# server to get detailed INFO logs for every decision made for that company:
+#   SCOUT_DEBUG_COMPANY="Acme Corp" uvicorn main:app --reload
+# ---------------------------------------------------------------------------
+_DEBUG_COMPANY: str = os.getenv("SCOUT_DEBUG_COMPANY", "").lower().strip()
+
+
+def _dlog(co_name: str, msg: str) -> None:
+    """Emit a verbose log line only when SCOUT_DEBUG_COMPANY matches co_name."""
+    if _DEBUG_COMPANY and co_name.lower() == _DEBUG_COMPANY:
+        logger.info("[DBG:%s] %s", co_name, msg)
+
 
 # ---------------------------------------------------------------------------
 # Concurrency
@@ -205,6 +222,9 @@ async def _get_job_links(
             pairs.append((text, abs_href))
 
         logger.debug(f"[{co_name}] {len(pairs)} total links on career page")
+        _dlog(co_name, f"ALL LINKS found on career page ({len(pairs)} total):")
+        for _t, _u in pairs:
+            _dlog(co_name, f"  {_t!r:60s}  {_u}")
         return pairs
     except Exception as exc:
         logger.warning(f"[{co_name}] Page load failed: {exc}")
@@ -235,11 +255,14 @@ async def _fetch_greenhouse_job(
     async with http_sem:
         for tmpl in _GH_DESC_ENDPOINTS:
             api_url = tmpl.format(co_id=co_id, job_id=job_id)
+            _dlog(co_name, f"  GH API  GET {api_url}")
             try:
                 async with session.get(api_url, timeout=_TIMEOUT) as r:
+                    _dlog(co_name, f"  GH API  → HTTP {r.status}")
                     if r.status != 200:
                         continue
                     data = await r.json(content_type=None)
+                    _dlog(co_name, f"  GH API  title={data.get('title')!r}  location={data.get('location', {}).get('name')!r}  desc_len={len(data.get('content') or '')}")
                     return ScrapedJob(
                         job_id      = _stable_id(co_slug, url),
                         company     = co_name,
@@ -272,12 +295,15 @@ async def _fetch_lever_job(
     http_sem: asyncio.Semaphore,
 ) -> Optional[ScrapedJob]:
     api_url = f"https://api.lever.co/v0/postings/{co_id}/{job_id}?mode=json"
+    _dlog(co_name, f"  LV API  GET {api_url}")
     async with http_sem:
         try:
             async with session.get(api_url, timeout=_TIMEOUT) as r:
+                _dlog(co_name, f"  LV API  → HTTP {r.status}")
                 if r.status != 200:
                     raise ValueError(f"HTTP {r.status}")
                 data = await r.json(content_type=None)
+                _dlog(co_name, f"  LV API  title={data.get('text')!r}  desc_len={len(data.get('descriptionPlain') or '')}")
 
             desc = data.get("descriptionPlain", "").strip()
             if not desc:
@@ -335,9 +361,11 @@ async def _fetch_ashby_jobs(
         "query": _ASHBY_QUERY,
     }
     api_url = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+    _dlog(co_name, f"  ASH API POST {api_url}  org={co_id!r}  wanted_ids={wanted_ids}")
     async with http_sem:
         try:
             async with session.post(api_url, json=payload, timeout=_TIMEOUT) as r:
+                _dlog(co_name, f"  ASH API → HTTP {r.status}")
                 if r.status != 200:
                     raise ValueError(f"HTTP {r.status}")
                 data = await r.json(content_type=None)
@@ -351,11 +379,13 @@ async def _fetch_ashby_jobs(
             ]
 
     postings = (data.get("data") or {}).get("jobBoard", {}).get("jobPostings", [])
+    _dlog(co_name, f"  ASH API → {len(postings)} total postings in board, filtering to {len(wanted_ids)} wanted")
     jobs = []
     for j in postings:
         jid = j.get("id", "")
         if jid not in wanted_ids:
             continue
+        _dlog(co_name, f"  ASH API   matched posting id={jid!r}  title={j.get('title')!r}")
         title, url = wanted_urls.get(jid, (j.get("title", ""), ""))
         if not url:
             url = j.get("externalLink") or f"https://jobs.ashbyhq.com/{co_id}/{jid}"
@@ -502,6 +532,19 @@ async def _scrape_company(
 
     # Filter by keyword match
     matching = [(title, url) for title, url in all_links if _matches(title)]
+
+    if _DEBUG_COMPANY and co_name.lower() == _DEBUG_COMPANY:
+        _dlog(co_name, f"KEYWORD FILTER  include={JOB_KEYWORDS}  exclude={EXCLUDE_KEYWORDS}")
+        for _t, _u in all_links:
+            if _matches(_t):
+                _dlog(co_name, f"  MATCH  {_t!r}")
+            else:
+                _excl = next((k for k in EXCLUDE_KEYWORDS if k.lower() in _t.lower()), None)
+                _incl = next((k for k in JOB_KEYWORDS if k.lower() in _t.lower()), None)
+                reason = f"excluded by {_excl!r}" if _excl else ("no include match" if not _incl else f"excluded by {_excl!r}")
+                _dlog(co_name, f"  SKIP   {_t!r}  ({reason})")
+        _dlog(co_name, f"  → {len(matching)} matched out of {len(all_links)} links")
+
     if not matching:
         logger.debug(f"[{co_name}] No matching job titles found")
         return []
@@ -514,8 +557,10 @@ async def _scrape_company(
     ash_jobs: Dict[str, Dict] = {}  # co_id -> {job_id: (title, url)}
     gen_jobs: List[Tuple[str, str]] = []             # (title, url)
 
+    _dlog(co_name, "ATS DETECTION per matching link:")
     for title, url in matching:
         ats_type, co_id, job_id = _detect_ats(url)
+        _dlog(co_name, f"  [{ats_type:<10s}] co_id={co_id!r:<22s} job_id={job_id!r:<38s} title={title!r}")
         if ats_type == ATS_GREENHOUSE:
             gh_jobs.append((co_id, job_id, title, url))
         elif ats_type == ATS_LEVER:
