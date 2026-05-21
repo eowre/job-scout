@@ -37,6 +37,9 @@ from services.scraper import (
     _TIMEOUT,
     _BOT_BLOCKED_CODES,
     _get_job_links,
+    _find_open_roles_link,
+    _parse_raw_links,
+    _load_and_wait,
     _detect_ats,
     _matches,
     _stable_id,
@@ -147,12 +150,13 @@ async def debug_company(
         return
 
     # -----------------------------------------------------------------------
-    # Stage 1 — Playwright
+    # Stage 1 — Playwright (with open-roles navigation)
     # -----------------------------------------------------------------------
     _h("STAGE 1 — Playwright: render career page")
     _info(f"Launching headless Chromium → {career_url}")
 
     all_links: List[Tuple[str, str]] = []
+    nav_url: Optional[str] = None
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
@@ -164,9 +168,48 @@ async def debug_company(
             java_script_enabled=True,
             ignore_https_errors=True,
         )
+        page = await context.new_page()
         try:
-            all_links = await _get_job_links(context, career_url, co_name)
+            # Step 1a — land on the career page
+            await _load_and_wait(page, career_url)
+            raw = await page.evaluate(
+                """() => {
+                    const links = [];
+                    document.querySelectorAll('a[href]').forEach(el => {
+                        const text = (el.innerText || el.textContent || '').trim();
+                        const href = el.getAttribute('href') || '';
+                        if (text && href) links.push({ text, href });
+                    });
+                    return links;
+                }"""
+            )
+            landing_pairs = _parse_raw_links(raw, career_url)
+            _info(f"Landing page: {len(landing_pairs)} links found")
+
+            # Step 1b — check for open-roles navigation link
+            nav_url = _find_open_roles_link(landing_pairs, career_url)
+            if nav_url:
+                _ok(f"Open-roles nav link found → {nav_url}")
+                _info("Navigating to sub-page…")
+                await _load_and_wait(page, nav_url)
+                raw = await page.evaluate(
+                    """() => {
+                        const links = [];
+                        document.querySelectorAll('a[href]').forEach(el => {
+                            const text = (el.innerText || el.textContent || '').trim();
+                            const href = el.getAttribute('href') || '';
+                            if (text && href) links.push({ text, href });
+                        });
+                        return links;
+                    }"""
+                )
+                all_links = _parse_raw_links(raw, nav_url)
+                _info(f"Open-roles sub-page: {len(all_links)} links found")
+            else:
+                _dim("No open-roles navigation link detected — using landing page links")
+                all_links = landing_pairs
         finally:
+            await page.close()
             await context.close()
             await browser.close()
 
@@ -179,7 +222,8 @@ async def debug_company(
         _warn("  • JS loads jobs via XHR — check the page in a real browser first")
         return
 
-    print(f"\n  Found {_BOLD}{len(all_links)}{_RESET} total links on the page")
+    print(f"\n  Found {_BOLD}{len(all_links)}{_RESET} total links"
+          + (f" (from sub-page: {nav_url})" if nav_url else " (from landing page)"))
 
     # -----------------------------------------------------------------------
     # Stage 2 — Keyword filtering

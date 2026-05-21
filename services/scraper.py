@@ -193,38 +193,114 @@ _EXTRACT_JS = """
 }
 """
 
+# Matches navigation links that lead to a dedicated job-listings sub-page.
+# Intentionally broad so we catch common phrasings across many company sites.
+_OPEN_ROLES_RE = re.compile(
+    r"(?:"
+    r"open\s+(?:roles?|positions?|jobs?)"
+    r"|all\s+(?:open\s+)?(?:jobs?|roles?|positions?|openings?)"
+    r"|view\s+(?:all\s+)?(?:jobs?|roles?|positions?|openings?|opportunities)"
+    r"|see\s+(?:all\s+)?(?:jobs?|roles?|positions?|openings?)"
+    r"|current\s+(?:job\s+)?openings?"
+    r"|job\s+openings?"
+    r"|(?:explore|browse)\s+(?:jobs?|roles?|opportunities)"
+    r")",
+    re.I,
+)
+
+# ATS hosts that are safe to follow even if they differ from the career-page domain
+_ATS_HOSTS = {"greenhouse.io", "lever.co", "ashbyhq.com"}
+
+
+def _parse_raw_links(raw: list, base_url: str) -> List[Tuple[str, str]]:
+    """Convert the raw JS link list into de-duplicated (text, abs_href) pairs."""
+    pairs, seen = [], set()
+    for item in raw:
+        text = (item.get("text") or "").strip()
+        href = (item.get("href") or "").strip()
+        if not text or not href or href.startswith("mailto:"):
+            continue
+        abs_href = _absolute(href, base_url)
+        if abs_href in seen:
+            continue
+        seen.add(abs_href)
+        pairs.append((text, abs_href))
+    return pairs
+
+
+def _find_open_roles_link(pairs: List[Tuple[str, str]], base_url: str) -> Optional[str]:
+    """
+    Scan page links for a 'view all jobs / open roles' navigation link.
+
+    Returns the first URL that:
+      • has link text matching _OPEN_ROLES_RE
+      • is not the same page we're already on
+      • is on the same domain OR on a known ATS host
+    Returns None if no such link is found.
+    """
+    base_parsed = urlparse(base_url)
+    for text, url in pairs:
+        if not _OPEN_ROLES_RE.search(text):
+            continue
+        parsed = urlparse(url)
+        if url.rstrip("/") == base_url.rstrip("/"):
+            continue  # already on this page
+        same_domain = parsed.netloc == base_parsed.netloc
+        is_ats = any(host in parsed.netloc for host in _ATS_HOSTS)
+        if same_domain or is_ats:
+            return url
+    return None
+
+
+async def _load_and_wait(page, url: str) -> None:
+    """Navigate to url and wait for the page to settle."""
+    await page.goto(url, wait_until="domcontentloaded",
+                    timeout=REQUEST_TIMEOUT_SECS * 1000)
+    try:
+        await page.wait_for_load_state("networkidle", timeout=6_000)
+    except Exception:
+        await page.wait_for_timeout(2_500)
+
+
 async def _get_job_links(
     context: BrowserContext,
     career_url: str,
     co_name: str,
 ) -> List[Tuple[str, str]]:
-    """Render career_url and return (title, abs_href) pairs for all anchors."""
+    """
+    Render career_url and return (title, abs_href) pairs for all anchors.
+
+    Two-step navigation:
+      1. Land on the career page.
+      2. If an 'open roles / all jobs' navigation link is found, follow it
+         first — many career pages are landing pages whose actual job list
+         lives one click away.
+    """
     page = await context.new_page()
     try:
-        await page.goto(career_url, wait_until="domcontentloaded",
-                        timeout=REQUEST_TIMEOUT_SECS * 1000)
-        try:
-            await page.wait_for_load_state("networkidle", timeout=6_000)
-        except Exception:
-            await page.wait_for_timeout(2_500)
+        await _load_and_wait(page, career_url)
 
         raw: list = await page.evaluate(_EXTRACT_JS)
-        pairs, seen = [], set()
-        for item in raw:
-            text = (item.get("text") or "").strip()
-            href = (item.get("href") or "").strip()
-            if not text or not href or href.startswith("mailto:"):
-                continue
-            abs_href = _absolute(href, career_url)
-            if abs_href in seen:
-                continue
-            seen.add(abs_href)
-            pairs.append((text, abs_href))
+        pairs = _parse_raw_links(raw, career_url)
 
-        logger.debug(f"[{co_name}] {len(pairs)} total links on career page")
-        _dlog(co_name, f"ALL LINKS found on career page ({len(pairs)} total):")
+        _dlog(co_name, f"ALL LINKS on career landing page ({len(pairs)} total):")
         for _t, _u in pairs:
             _dlog(co_name, f"  {_t!r:60s}  {_u}")
+
+        # --- Two-step: follow an "open roles" navigation link if present ------
+        nav_url = _find_open_roles_link(pairs, career_url)
+        if nav_url:
+            logger.debug(f"[{co_name}] Open-roles nav link found → {nav_url}")
+            _dlog(co_name, f"NAVIGATING to open-roles sub-page: {nav_url}")
+            await _load_and_wait(page, nav_url)
+            raw = await page.evaluate(_EXTRACT_JS)
+            pairs = _parse_raw_links(raw, nav_url)
+            _dlog(co_name, f"ALL LINKS on open-roles sub-page ({len(pairs)} total):")
+            for _t, _u in pairs:
+                _dlog(co_name, f"  {_t!r:60s}  {_u}")
+        # ----------------------------------------------------------------------
+
+        logger.debug(f"[{co_name}] {len(pairs)} total links (nav_followed={nav_url is not None})")
         return pairs
     except Exception as exc:
         logger.warning(f"[{co_name}] Page load failed: {exc}")

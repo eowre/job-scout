@@ -13,10 +13,12 @@ from services.scraper import (
     _absolute,
     _company_slug,
     _detect_ats,
+    _find_open_roles_link,
     _html_to_text,
     _matches,
     _parse_iso,
     _parse_ms,
+    _parse_raw_links,
     _stable_id,
     ATS_ASHBY,
     ATS_GENERIC,
@@ -285,3 +287,91 @@ class TestBotBlockedCodes:
     def test_404_not_blocked(self):
         # 404 is a real error, not bot-detection
         assert 404 not in _BOT_BLOCKED_CODES
+
+
+# ---------------------------------------------------------------------------
+# _parse_raw_links
+# ---------------------------------------------------------------------------
+
+class TestParseRawLinks:
+    def test_basic(self):
+        raw = [{"text": "Software Engineer", "href": "https://example.com/jobs/1"}]
+        pairs = _parse_raw_links(raw, "https://example.com/careers")
+        assert pairs == [("Software Engineer", "https://example.com/jobs/1")]
+
+    def test_deduplicates(self):
+        raw = [
+            {"text": "SWE", "href": "https://example.com/jobs/1"},
+            {"text": "SWE duplicate", "href": "https://example.com/jobs/1"},
+        ]
+        pairs = _parse_raw_links(raw, "https://example.com")
+        assert len(pairs) == 1
+
+    def test_skips_mailto(self):
+        raw = [{"text": "Email us", "href": "mailto:jobs@example.com"}]
+        assert _parse_raw_links(raw, "https://example.com") == []
+
+    def test_skips_empty_text(self):
+        raw = [{"text": "", "href": "https://example.com/jobs/1"}]
+        assert _parse_raw_links(raw, "https://example.com") == []
+
+    def test_skips_empty_href(self):
+        raw = [{"text": "SWE", "href": ""}]
+        assert _parse_raw_links(raw, "https://example.com") == []
+
+    def test_resolves_relative_href(self):
+        raw = [{"text": "SWE", "href": "/jobs/42"}]
+        pairs = _parse_raw_links(raw, "https://example.com/careers")
+        assert pairs[0][1] == "https://example.com/jobs/42"
+
+
+# ---------------------------------------------------------------------------
+# _find_open_roles_link
+# ---------------------------------------------------------------------------
+
+class TestFindOpenRolesLink:
+    BASE = "https://acme.com/careers"
+
+    def _pairs(self, *items):
+        return list(items)
+
+    def test_finds_open_roles(self):
+        pairs = self._pairs(("Open Roles", "https://acme.com/careers/jobs"))
+        assert _find_open_roles_link(pairs, self.BASE) == "https://acme.com/careers/jobs"
+
+    def test_finds_all_jobs(self):
+        pairs = self._pairs(("All Jobs", "https://acme.com/jobs"))
+        assert _find_open_roles_link(pairs, self.BASE) == "https://acme.com/jobs"
+
+    def test_finds_view_all_openings(self):
+        pairs = self._pairs(("View All Openings", "https://acme.com/openings"))
+        assert _find_open_roles_link(pairs, self.BASE) is not None
+
+    def test_finds_current_openings(self):
+        pairs = self._pairs(("Current Openings", "https://acme.com/now"))
+        assert _find_open_roles_link(pairs, self.BASE) is not None
+
+    def test_accepts_ats_host(self):
+        pairs = self._pairs(("Open Roles", "https://boards.greenhouse.io/acme"))
+        assert _find_open_roles_link(pairs, self.BASE) == "https://boards.greenhouse.io/acme"
+
+    def test_rejects_external_non_ats(self):
+        pairs = self._pairs(("Open Roles", "https://linkedin.com/company/acme/jobs"))
+        assert _find_open_roles_link(pairs, self.BASE) is None
+
+    def test_skips_same_page(self):
+        # URL is the same as base — already on this page, don't loop
+        pairs = self._pairs(("Open Roles", "https://acme.com/careers"))
+        assert _find_open_roles_link(pairs, self.BASE) is None
+
+    def test_skips_same_page_trailing_slash(self):
+        pairs = self._pairs(("Open Roles", "https://acme.com/careers/"))
+        assert _find_open_roles_link(pairs, self.BASE) is None
+
+    def test_no_match_returns_none(self):
+        pairs = self._pairs(("Home", "https://acme.com/"), ("Blog", "https://acme.com/blog"))
+        assert _find_open_roles_link(pairs, self.BASE) is None
+
+    def test_case_insensitive(self):
+        pairs = self._pairs(("VIEW ALL JOBS", "https://acme.com/jobs"))
+        assert _find_open_roles_link(pairs, self.BASE) is not None
