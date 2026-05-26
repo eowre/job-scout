@@ -300,6 +300,48 @@
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0f1117; }
     ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
+
+    /* FDE Prep / Roadmap page */
+    .roadmap-progress { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+    .roadmap-progress-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+    .roadmap-progress-title { font-size: 13px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .roadmap-progress-count { font-size: 22px; font-weight: 800; color: #818cf8; }
+    .roadmap-progress-bar { background: #252836; border-radius: 6px; height: 8px; overflow: hidden; }
+    .roadmap-progress-fill { height: 8px; background: linear-gradient(90deg, #818cf8, #34d399); border-radius: 6px; transition: width 0.4s ease; }
+
+    .roadmap-section { margin-bottom: 28px; }
+    .roadmap-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #2d3148; }
+    .roadmap-section-title { font-size: 14px; font-weight: 700; color: #f1f5f9; display: flex; align-items: center; gap: 8px; }
+    .roadmap-section-count { font-size: 11px; color: #64748b; font-weight: 500; }
+
+    .roadmap-item { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border-radius: 10px; border: 1px solid #2d3148; background: #1a1d27; margin-bottom: 8px; transition: border-color 0.15s, opacity 0.2s; cursor: pointer; }
+    .roadmap-item:hover { border-color: #818cf8; }
+    .roadmap-item.done { opacity: 0.45; }
+    .roadmap-item.done .roadmap-item-title { text-decoration: line-through; color: #475569; }
+
+    .roadmap-check { width: 20px; height: 20px; border-radius: 6px; border: 2px solid #2d3148; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; margin-top: 1px; transition: all 0.15s; background: #0f1117; }
+    .roadmap-check.checked { background: #818cf8; border-color: #818cf8; }
+
+    .roadmap-item-body { flex: 1; min-width: 0; }
+    .roadmap-item-title { font-size: 14px; font-weight: 600; color: #e2e8f0; margin-bottom: 4px; line-height: 1.3; }
+    .roadmap-item-desc { font-size: 12px; color: #64748b; line-height: 1.5; margin-bottom: 8px; }
+    .roadmap-item-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+    .priority-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+    .priority-high   { background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.3); color: #fca5a5; }
+    .priority-medium { background: rgba(251,191,36,0.12);  border: 1px solid rgba(251,191,36,0.25); color: #fde68a; }
+    .priority-low    { background: rgba(100,116,139,0.15); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
+
+    .target-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; background: #252836; border: 1px solid #2d3148; color: #64748b; }
+
+    .companies-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .companies-table th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3148; }
+    .companies-table td { padding: 10px 12px; border-bottom: 1px solid #1e2235; color: #94a3b8; vertical-align: top; }
+    .companies-table tr:last-child td { border-bottom: none; }
+    .tier-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .tier-1 { background: rgba(129,140,248,0.15); border: 1px solid rgba(129,140,248,0.3); color: #a5b4fc; }
+    .tier-2 { background: rgba(52,211,153,0.12);  border: 1px solid rgba(52,211,153,0.25); color: #6ee7b7; }
+    .tier-3 { background: rgba(100,116,139,0.15); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -326,6 +368,10 @@
     </button>
     <button class="nav-btn" :class="{active: page==='resume'}" @click="page='resume'; loadResumes(); loadGeneratedResumes()">
       <span class="nav-icon">📄</span> Resume
+    </button>
+    <button class="nav-btn" :class="{active: page==='roadmap'}" @click="page='roadmap'">
+      <span class="nav-icon">🗺️</span> FDE Prep
+      <span x-text="roadmapProgress" style="margin-left:auto; background:#252836; border-radius:10px; padding:1px 7px; font-size:11px; color:#818cf8;"></span>
     </button>
   </div>
 
@@ -1351,6 +1397,151 @@
 
     </div>
 
+    <!-- FDE PREP / ROADMAP PAGE -->
+    <div x-show="page==='roadmap'">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <div class="page-title">FDE Prep</div>
+          <div class="page-sub">Checklist for landing a Forward Deployed Engineer role</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="resetRoadmap()" title="Reset all checkboxes">↺ Reset</button>
+      </div>
+
+      <!-- Overall progress -->
+      <div class="roadmap-progress">
+        <div class="roadmap-progress-header">
+          <span class="roadmap-progress-title">Overall Progress</span>
+          <span class="roadmap-progress-count" x-text="roadmapDone + ' / ' + roadmapTotal"></span>
+        </div>
+        <div class="roadmap-progress-bar">
+          <div class="roadmap-progress-fill" :style="`width:${roadmapTotal ? (roadmapDone/roadmapTotal*100) : 0}%`"></div>
+        </div>
+      </div>
+
+      <!-- Section: GitHub & Shipped Projects -->
+      <div class="roadmap-section">
+        <div class="roadmap-section-header">
+          <span class="roadmap-section-title">🚀 GitHub &amp; Shipped Projects</span>
+          <span class="roadmap-section-count" x-text="sectionDone('github') + '/5 done'"></span>
+        </div>
+
+        <template x-for="item in roadmapSections.github" :key="item.id">
+          <div class="roadmap-item" :class="{done: roadmap[item.id]}" @click="toggleRoadmap(item.id)">
+            <div class="roadmap-check" :class="{checked: roadmap[item.id]}">
+              <span x-show="roadmap[item.id]">✓</span>
+            </div>
+            <div class="roadmap-item-body">
+              <div class="roadmap-item-title" x-text="item.title"></div>
+              <div class="roadmap-item-desc" x-text="item.desc"></div>
+              <div class="roadmap-item-tags">
+                <span class="priority-badge" :class="'priority-' + item.priority" x-text="item.priority.charAt(0).toUpperCase() + item.priority.slice(1) + ' priority'"></span>
+                <span class="target-badge" x-text="item.targets"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Section: Technical Skills -->
+      <div class="roadmap-section">
+        <div class="roadmap-section-header">
+          <span class="roadmap-section-title">⚙️ Technical Skills to Demonstrate</span>
+          <span class="roadmap-section-count" x-text="sectionDone('skills') + '/4 done'"></span>
+        </div>
+
+        <template x-for="item in roadmapSections.skills" :key="item.id">
+          <div class="roadmap-item" :class="{done: roadmap[item.id]}" @click="toggleRoadmap(item.id)">
+            <div class="roadmap-check" :class="{checked: roadmap[item.id]}">
+              <span x-show="roadmap[item.id]">✓</span>
+            </div>
+            <div class="roadmap-item-body">
+              <div class="roadmap-item-title" x-text="item.title"></div>
+              <div class="roadmap-item-desc" x-text="item.desc"></div>
+              <div class="roadmap-item-tags">
+                <span class="priority-badge" :class="'priority-' + item.priority" x-text="item.priority.charAt(0).toUpperCase() + item.priority.slice(1) + ' priority'"></span>
+                <span class="target-badge" x-text="item.targets"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Section: Resume Framing -->
+      <div class="roadmap-section">
+        <div class="roadmap-section-header">
+          <span class="roadmap-section-title">📝 Resume Framing Changes</span>
+          <span class="roadmap-section-count" x-text="sectionDone('resume_framing') + '/4 done'"></span>
+        </div>
+
+        <template x-for="item in roadmapSections.resume_framing" :key="item.id">
+          <div class="roadmap-item" :class="{done: roadmap[item.id]}" @click="toggleRoadmap(item.id)">
+            <div class="roadmap-check" :class="{checked: roadmap[item.id]}">
+              <span x-show="roadmap[item.id]">✓</span>
+            </div>
+            <div class="roadmap-item-body">
+              <div class="roadmap-item-title" x-text="item.title"></div>
+              <div class="roadmap-item-desc" x-text="item.desc"></div>
+              <div class="roadmap-item-tags">
+                <span class="priority-badge" :class="'priority-' + item.priority" x-text="item.priority.charAt(0).toUpperCase() + item.priority.slice(1) + ' priority'"></span>
+                <span class="target-badge" x-text="item.targets"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Section: Networking -->
+      <div class="roadmap-section">
+        <div class="roadmap-section-header">
+          <span class="roadmap-section-title">🌐 Networking &amp; Visibility</span>
+          <span class="roadmap-section-count" x-text="sectionDone('networking') + '/1 done'"></span>
+        </div>
+
+        <template x-for="item in roadmapSections.networking" :key="item.id">
+          <div class="roadmap-item" :class="{done: roadmap[item.id]}" @click="toggleRoadmap(item.id)">
+            <div class="roadmap-check" :class="{checked: roadmap[item.id]}">
+              <span x-show="roadmap[item.id]">✓</span>
+            </div>
+            <div class="roadmap-item-body">
+              <div class="roadmap-item-title" x-text="item.title"></div>
+              <div class="roadmap-item-desc" x-text="item.desc"></div>
+              <div class="roadmap-item-tags">
+                <span class="priority-badge" :class="'priority-' + item.priority" x-text="item.priority.charAt(0).toUpperCase() + item.priority.slice(1) + ' priority'"></span>
+                <span class="target-badge" x-text="item.targets"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Target Companies -->
+      <div class="card">
+        <div class="section-title" style="margin-bottom:16px;">🎯 Target Companies</div>
+        <table class="companies-table">
+          <thead>
+            <tr>
+              <th>Tier</th>
+              <th>Companies</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tier-badge tier-1">Tier 1</span></td>
+              <td style="color:#e2e8f0; font-weight:500;">Palantir, Anduril, Scale AI, Anthropic, OpenAI</td>
+            </tr>
+            <tr>
+              <td><span class="tier-badge tier-2">Tier 2</span></td>
+              <td>Databricks, Glean, Dust, Cohere, Harvey AI</td>
+            </tr>
+            <tr>
+              <td><span class="tier-badge tier-3">Tier 3</span></td>
+              <td>Any Series B+ AI infra or vertical AI company</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <!-- Toast -->
@@ -1432,7 +1623,58 @@ function app() {
     // Toast
     toast: { show: false, msg: '' },
 
+    // FDE Prep roadmap — persisted to localStorage
+    roadmap: {},
+    roadmapSections: {
+      github: [
+        { id: 'ship_app',          priority: 'high',   targets: 'All targets',    title: 'Ship the Job Search Intelligence Layer app publicly', desc: 'Polish FastAPI + Next.js + Anthropic API project, add a README with architecture diagram and demo GIF. This is your anchor FDE project.' },
+        { id: 'integration_demo',  priority: 'high',   targets: 'All targets',    title: 'Build a customer-facing integration demo',            desc: 'End-to-end integration: ingest data from an API, transform it, push to a destination. Think webhook → process → Slack/email/database. Shows the FDE core loop.' },
+        { id: 'llm_internal_tool', priority: 'high',   targets: 'AI companies',   title: 'Build an LLM-powered internal tool',                  desc: 'Something an ops or sales team would actually use — auto-summarize meeting notes, classify support tickets, generate reports from raw data. Shows applied AI judgment.' },
+        { id: 'rfid_iot',          priority: 'medium', targets: 'Defense',        title: 'Publish an RFID/IoT integration example',             desc: 'Sanitize and open-source a version of your RFID tunnel / SAT work — even as a template or anonymized case study repo. Rare signal for Anduril/defense.' },
+        { id: 'dockerize',         priority: 'medium', targets: 'All targets',    title: 'Add Dockerized deployments to all projects',          desc: 'Every repo should include a Dockerfile and docker-compose.yml. FDEs are expected to deploy fast into unknown environments.' },
+      ],
+      skills: [
+        { id: 'vector_db',     priority: 'high',   targets: 'AI companies',   title: 'Hands-on with a vector DB (Pinecone, Qdrant, or pgvector)', desc: 'Build something with embeddings + semantic search. Directly relevant for AI company FDE roles and increasingly expected.' },
+        { id: 'iac',           priority: 'medium', targets: 'Data / Infra',   title: 'Terraform or Pulumi IaC project',                          desc: 'Spin up real infra with code. Even a simple VPC + EC2 + RDS config on AWS shows infra-as-code fluency valued at Databricks/Snowflake.' },
+        { id: 'kubernetes',    priority: 'medium', targets: 'Data / Defense', title: 'Kubernetes basics on a real cluster',                      desc: 'Deploy one of your projects on a k8s cluster (minikube → EKS/GKE). Document it. Shows you can operate in customer infra environments.' },
+        { id: 'data_pipeline', priority: 'medium', targets: 'Data / Infra',   title: 'Data pipeline experience (Airflow, dbt, or Spark basics)',  desc: 'Even a small ETL pipeline project closes the gap for Databricks/Snowflake FDE roles where customers are data teams.' },
+      ],
+      resume_framing: [
+        { id: 'reframe_avery',     priority: 'high',   targets: 'All targets', title: 'Reframe Avery Dennison bullets as embedded engineering', desc: 'Lead with code shipped for clients, integrations built, systems deployed — not "advised" or "supported". FDE hiring = show, don\'t tell.' },
+        { id: 'quantified_impact', priority: 'high',   targets: 'All targets', title: 'Add quantified impact to every role',                   desc: 'Time saved, clients onboarded, integrations deployed, revenue influenced. FDE JDs heavily weight measurable outcomes.' },
+        { id: 'projects_section',  priority: 'high',   targets: 'All targets', title: 'Add a Projects section above Experience',               desc: 'Put your GitHub projects here — title, 1-line description, tech stack, link. Makes shipped code visible at a glance.' },
+        { id: 'skills_section',    priority: 'medium', targets: 'All targets', title: 'Add a technical skills section that mirrors FDE JDs',   desc: 'Separate sections for Languages, Cloud/Infra, AI/ML tools, Identity/Auth. Match the exact language in Palantir/Anduril/Anthropic JDs.' },
+      ],
+      networking: [
+        { id: 'technical_posts', priority: 'low', targets: 'All targets', title: 'Write 2–3 technical posts (LinkedIn or blog)', desc: 'Document something you built — the RFID tunnel, an LLM integration, the job search app. FDE hiring teams Google candidates. Searchable writing is leverage.' },
+      ],
+    },
+
+    get roadmapTotal() { return 14; },
+    get roadmapDone()  { return Object.values(this.roadmap).filter(Boolean).length; },
+    get roadmapProgress() { return `${this.roadmapDone}/${this.roadmapTotal}`; },
+
+    sectionDone(key) {
+      return (this.roadmapSections[key] || []).filter(i => this.roadmap[i.id]).length;
+    },
+
+    toggleRoadmap(id) {
+      this.roadmap[id] = !this.roadmap[id];
+      localStorage.setItem('job-scout-roadmap', JSON.stringify(this.roadmap));
+    },
+
+    resetRoadmap() {
+      this.roadmap = {};
+      localStorage.removeItem('job-scout-roadmap');
+    },
+
     async init() {
+      // Restore roadmap state from localStorage
+      try {
+        const saved = localStorage.getItem('job-scout-roadmap');
+        if (saved) this.roadmap = JSON.parse(saved);
+      } catch(e) {}
+
       await this.loadResumes();
       await this.loadJobs();
       await this.loadScout();
