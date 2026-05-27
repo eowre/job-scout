@@ -14,6 +14,7 @@ from config import CHECK_INTERVAL_HOURS
 from database import init_db
 from routers import resume, jobs, analysis, scrape, found_jobs, keywords
 from services import scraper_service
+from services.scraper_service import start_parse_workers
 
 
 async def _interval_loop():
@@ -50,6 +51,8 @@ async def _cron_loop():
 async def lifespan(app: FastAPI):
     init_db()
     print("✓ Database initialized")
+
+    await start_parse_workers()
 
     asyncio.create_task(_interval_loop())
     asyncio.create_task(_cron_loop())

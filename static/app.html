@@ -388,6 +388,9 @@
         <div class="flex gap-2 items-center">
           <span class="badge" :class="scout.status.running ? 'badge-running' : 'badge-idle'"
             x-text="scout.status.running ? 'Scanning…' : 'Idle'"></span>
+          <span x-show="scout.status.parse_queue_depth > 0"
+            class="badge badge-running"
+            x-text="'Parsing ' + scout.status.parse_queue_depth + ' job(s)…'"></span>
           <button class="btn btn-primary" @click="triggerScan()" :disabled="scout.triggering || scout.status.running">
             <span x-show="!scout.triggering && !scout.status.running">⚡ Scan Now</span>
             <span x-show="scout.triggering || scout.status.running" class="loading"><span class="spinner"></span> Running…</span>
