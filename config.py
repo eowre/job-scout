@@ -45,7 +45,10 @@ EXCLUDE_KEYWORDS: list[str] = [
 # Scraping behaviour
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT_SECS = 15
-MAX_CONCURRENT_REQUESTS = 15
+# Lower this to reduce CPU spikes during scans — each unit is one concurrent
+# Playwright browser context or ATS API call running at the same time.
+# 15 = aggressive (fast scans, high CPU), 5 = conservative (slower, gentler)
+MAX_CONCURRENT_REQUESTS = 8
 CHECK_INTERVAL_HOURS = 2
 
 # ---------------------------------------------------------------------------
