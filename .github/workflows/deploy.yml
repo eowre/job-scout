@@ -1,0 +1,44 @@
+name: Deploy to Home Server
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    name: Build & restart on home server
+    runs-on: self-hosted   # targets the runner installed on your Linux machine
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v4
+
+      - name: Verify .env exists
+        run: |
+          if [ ! -f .env ]; then
+            echo "ERROR: .env file not found — place it on the server at $(pwd)/.env"
+            exit 1
+          fi
+
+      - name: Build image and restart container
+        run: |
+          docker compose down
+          docker compose up --build -d
+
+      - name: Wait for health check
+        run: |
+          echo "Waiting for app to become healthy..."
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "✓ App is healthy"
+              exit 0
+            fi
+            echo "  attempt $i/12 — waiting 5s..."
+            sleep 5
+          done
+          echo "ERROR: app did not become healthy within 60s"
+          docker compose logs --tail=30
+          exit 1
+
+      - name: Show running containers
+        run: docker compose ps
