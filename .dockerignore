@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+env
+
+# Node
+node_modules
+
+# Runtime data — these live in Docker volumes, not in the image
+*.db
+uploads/
+generated/
+
+# Secrets — never bake into the image
+.env
+
+# Dev / test
+tests/
+scripts/
+pytest.ini
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db

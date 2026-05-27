@@ -1,9 +1,13 @@
+import os
+
 from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, Date, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 
-DATABASE_URL = "sqlite:///./jobscout.db"
+# Local default:  ./jobscout.db (relative to CWD)
+# Docker default: /app/data/jobscout.db  (set via DATABASE_URL env var)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./jobscout.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

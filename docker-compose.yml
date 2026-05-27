@@ -1,0 +1,44 @@
+services:
+  job-scout:
+    build: .
+    image: job-scout:latest
+    container_name: job-scout
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
+    # ── Secrets / config ────────────────────────────────────────────────────
+    # Copy .env.example → .env, fill in your ANTHROPIC_API_KEY, then run:
+    #   docker compose up
+    env_file:
+      - .env
+
+    environment:
+      # Override DB path to the named volume so data outlives the container
+      DATABASE_URL: "sqlite:////app/data/jobscout.db"
+      PYTHONUNBUFFERED: "1"
+
+    # ── Persistent storage ──────────────────────────────────────────────────
+    volumes:
+      # SQLite database — survives container restarts and rebuilds
+      - jobscout-data:/app/data
+      # Uploaded resumes
+      - jobscout-uploads:/app/uploads
+      # AI-generated resume .docx / .pdf files
+      - jobscout-generated:/app/generated
+
+    # ── Health check ─────────────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    # ── Playwright needs /dev/shm to run headless Chromium ──────────────────
+    shm_size: "256mb"
+
+volumes:
+  jobscout-data:
+  jobscout-uploads:
+  jobscout-generated:
