@@ -182,6 +182,11 @@
     .analytics-bar-fill { height: 5px; background: #818cf8; border-radius: 3px; }
     .analytics-bar-count { color: #64748b; flex: 0 0 28px; text-align: right; }
     .yoe-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #1e2d3d; color: #60a5fa; }
+    .fj-card-old { border-color: #5c1e1e !important; background: #160e0e; }
+    .fj-card-old:hover { border-color: #f87171 !important; }
+    .fj-card-old .fj-card-title { color: #fca5a5; }
+    .fj-filter-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #94a3b8; cursor: pointer; white-space: nowrap; }
+    .fj-filter-check input[type=checkbox] { accent-color: #818cf8; width: 14px; height: 14px; cursor: pointer; }
 
     /* Company validation panel */
     .validation-panel { margin-top: 20px; border-top: 1px solid #2d3148; padding-top: 18px; }
@@ -490,21 +495,40 @@
 
       <!-- Filters -->
       <div class="card mb-4" style="padding: 16px 20px;">
-        <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
-          <input x-model="foundJobs.q" @input.debounce.400ms="loadFoundJobs()" placeholder="Search title or company…" style="flex:1; min-width:200px; margin-bottom:0;" />
+        <div class="flex gap-2 items-center mb-2" style="flex-wrap:wrap;">
+          <input x-model="foundJobs.q" @input.debounce.400ms="loadFoundJobs()" placeholder="🔍 Title or company…" style="flex:1; min-width:180px; margin-bottom:0;" />
+          <input x-model="foundJobs.location" @input.debounce.400ms="loadFoundJobs()" placeholder="📍 Location…" style="width:150px; margin-bottom:0;" />
+          <select x-model="foundJobs.yoeMax" @change="loadFoundJobs()" style="width:auto; margin-bottom:0;">
+            <option value="">Any experience</option>
+            <option value="0">Entry level (0 yrs)</option>
+            <option value="2">Junior (≤ 2 yrs)</option>
+            <option value="4">Mid-level (≤ 4 yrs)</option>
+            <option value="7">Senior (≤ 7 yrs)</option>
+          </select>
           <select x-model="foundJobs.filterAdded" @change="loadFoundJobs()" style="width:auto; margin-bottom:0;">
             <option value="">All</option>
             <option value="false">Not in Pipeline</option>
             <option value="true">In Pipeline</option>
           </select>
+        </div>
+        <div class="flex gap-3 items-center" style="flex-wrap:wrap;">
+          <label class="fj-filter-check">
+            <input type="checkbox" x-model="foundJobs.hasComp" @change="loadFoundJobs()" />
+            💰 Has pay info
+          </label>
+          <label class="fj-filter-check">
+            <input type="checkbox" x-model="foundJobs.hideOld" @change="loadFoundJobs()" />
+            🕐 Hide jobs older than 7 days
+          </label>
           <span class="text-xs text-muted" x-show="foundJobs.loading">Loading…</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click="resetFoundJobFilters()">↺ Clear filters</button>
         </div>
       </div>
 
       <!-- Job cards -->
       <div class="fj-grid" x-show="!foundJobs.loading && foundJobs.jobs.length > 0">
         <template x-for="job in foundJobs.jobs" :key="job.id">
-          <div class="fj-card" @click="openFoundJob(job)">
+          <div class="fj-card" :class="{'fj-card-old': isOldJob(job)}" @click="openFoundJob(job)">
             <div class="flex justify-between items-start mb-1">
               <div class="fj-card-title" x-text="job.title"></div>
               <span class="badge text-xs ml-2" :class="job.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="job.parsed_at ? '✓ Parsed' : '⏳ Raw'" style="flex-shrink:0;"></span>
@@ -1607,6 +1631,10 @@ function app() {
       total: 0,
       loading: false,
       q: '',
+      location: '',
+      yoeMax: '',
+      hasComp: false,
+      hideOld: true,
       filterAdded: '',
       skip: 0,
       selected: null,
@@ -1738,20 +1766,43 @@ function app() {
     },
 
     // ── Found Jobs ────────────────────────────────────────────────────────────
+    _foundJobParams(skip = 0) {
+      const p = new URLSearchParams({ skip, limit: 50 });
+      if (this.foundJobs.q)            p.set('q', this.foundJobs.q);
+      if (this.foundJobs.location)     p.set('location', this.foundJobs.location);
+      if (this.foundJobs.yoeMax !== '') p.set('yoe_max', this.foundJobs.yoeMax);
+      if (this.foundJobs.hasComp)      p.set('has_comp', 'true');
+      if (this.foundJobs.filterAdded !== '') p.set('added', this.foundJobs.filterAdded);
+      p.set('hide_old', this.foundJobs.hideOld ? 'true' : 'false');
+      return p;
+    },
+
     async loadFoundJobs() {
       this.foundJobs.loading = true;
       this.foundJobs.skip = 0;
       try {
-        const params = new URLSearchParams({ skip: 0, limit: 50 });
-        if (this.foundJobs.q) params.set('q', this.foundJobs.q);
-        if (this.foundJobs.filterAdded !== '') params.set('added', this.foundJobs.filterAdded);
-        const res = await fetch('/found-jobs?' + params);
+        const res = await fetch('/found-jobs?' + this._foundJobParams(0));
         const data = await res.json();
         this.foundJobs.jobs = data.jobs;
         this.foundJobs.total = data.total;
       } finally {
         this.foundJobs.loading = false;
       }
+    },
+
+    resetFoundJobFilters() {
+      this.foundJobs.q = '';
+      this.foundJobs.location = '';
+      this.foundJobs.yoeMax = '';
+      this.foundJobs.hasComp = false;
+      this.foundJobs.hideOld = true;
+      this.foundJobs.filterAdded = '';
+      this.loadFoundJobs();
+    },
+
+    isOldJob(job) {
+      if (!job.scouted_at) return false;
+      return (Date.now() - new Date(job.scouted_at).getTime()) > 7 * 24 * 60 * 60 * 1000;
     },
 
     async loadFoundJobsAnalytics() {
@@ -1988,10 +2039,7 @@ function app() {
 
     async loadMoreFoundJobs() {
       const next = this.foundJobs.skip + 50;
-      const params = new URLSearchParams({ skip: next, limit: 50 });
-      if (this.foundJobs.q) params.set('q', this.foundJobs.q);
-      if (this.foundJobs.filterAdded !== '') params.set('added', this.foundJobs.filterAdded);
-      const res = await fetch('/found-jobs?' + params);
+      const res = await fetch('/found-jobs?' + this._foundJobParams(next));
       const data = await res.json();
       this.foundJobs.jobs.push(...data.jobs);
       this.foundJobs.skip = next;

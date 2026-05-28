@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -107,12 +107,17 @@ def get_analytics(db: Session = Depends(get_db)):
 def list_found_jobs(
     q: Optional[str] = Query(None),
     company: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    yoe_max: Optional[float] = Query(None),
+    has_comp: Optional[bool] = Query(None),
+    hide_old: bool = Query(True),   # hide jobs scouted more than 7 days ago
     added: Optional[bool] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     query = db.query(DiscoveredJob)
+
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -120,6 +125,24 @@ def list_found_jobs(
         )
     if company:
         query = query.filter(DiscoveredJob.company.ilike(f"%{company}%"))
+    if location:
+        query = query.filter(DiscoveredJob.location.ilike(f"%{location}%"))
+    if yoe_max is not None:
+        # Include jobs with null YOE (unspecified = could be any level)
+        query = query.filter(
+            (DiscoveredJob.years_of_experience == None) |
+            (DiscoveredJob.years_of_experience <= yoe_max)
+        )
+    if has_comp:
+        query = query.filter(
+            DiscoveredJob.compensation.isnot(None),
+            DiscoveredJob.compensation != "",
+            ~DiscoveredJob.compensation.ilike("%null%"),
+            ~DiscoveredJob.compensation.ilike("%none%"),
+        )
+    if hide_old:
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        query = query.filter(DiscoveredJob.discovered_at >= cutoff)
     if added is not None:
         query = query.filter(DiscoveredJob.added_to_pipeline == added)
 
