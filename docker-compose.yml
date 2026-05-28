@@ -36,10 +36,9 @@ services:
       start_period: 15s
 
     # ── Resource limits ──────────────────────────────────────────────────────
-    # cpus: number of cores the container can use (2.0 = 2 full cores)
-    # memory: hard RAM cap — Chromium needs headroom, don't go below 1g
+    # 4 of 8 cores, 4g of 15g RAM — leaves plenty free for OS, Nginx, runner
     cpus: "4.0"
-    mem_limit: "2g"
+    mem_limit: "4g"
 
     # ── Playwright needs /dev/shm to run headless Chromium ──────────────────
     shm_size: "256mb"
