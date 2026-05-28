@@ -13,12 +13,16 @@ jobs:
       - name: Checkout latest code
         uses: actions/checkout@v4
 
-      - name: Verify .env exists
+      - name: Copy .env from project folder
         run: |
-          if [ ! -f .env ]; then
-            echo "ERROR: .env file not found — place it on the server at $(pwd)/.env"
+          ENV_SOURCE="$HOME/Documents/Projects/job-scout/.env"
+          if [ ! -f "$ENV_SOURCE" ]; then
+            echo "ERROR: .env not found at $ENV_SOURCE"
+            echo "Run: nano ~/Documents/Projects/job-scout/.env and add your ANTHROPIC_API_KEY"
             exit 1
           fi
+          cp "$ENV_SOURCE" .env
+          echo "✓ .env copied"
 
       - name: Build image and restart container
         run: |
