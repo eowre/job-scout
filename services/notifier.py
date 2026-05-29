@@ -82,3 +82,35 @@ async def send_alert(job) -> None:
 
     if not sent:
         print(f"\n[NEW JOB] {job.title} @ {job.company} — {job.url}")
+
+
+async def send_scan_summary(companies_scraped: int, jobs_found: int, jobs_new: int) -> None:
+    """Send a single summary message at the end of each scan."""
+    if not DISCORD_WEBHOOK_URL:
+        return
+
+    if jobs_new > 0:
+        color = 0x34D399   # green — found something
+        title = f"🎯 {jobs_new} new job{'s' if jobs_new != 1 else ''} found"
+    else:
+        color = 0x475569   # grey — nothing new
+        title = "🔭 Scan complete — no new jobs"
+
+    embed = {
+        "title": title,
+        "color": color,
+        "fields": [
+            {"name": "Companies scanned", "value": str(companies_scraped), "inline": True},
+            {"name": "Total matches",     "value": str(jobs_found),        "inline": True},
+            {"name": "New this scan",     "value": str(jobs_new),          "inline": True},
+        ],
+        "footer": {"text": "Job Scout • scan summary"},
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}) as resp:
+            if resp.status not in (200, 204):
+                text = await resp.text()
+                logger.error(f"Discord scan summary failed {resp.status}: {text[:200]}")
+            else:
+                logger.info(f"  → Discord scan summary sent ({jobs_new} new)")

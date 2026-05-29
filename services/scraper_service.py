@@ -21,7 +21,7 @@ from typing import Optional
 
 from database import SessionLocal, DiscoveredJob, ScrapeRun
 from services.scraper import scrape_all
-from services.notifier import send_alert
+from services.notifier import send_alert, send_scan_summary
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +247,12 @@ async def run_scan() -> dict:
         logger.info(f"Scan complete — {new_count} new job(s) queued for parsing "
                     f"(queue depth: {_parse_queue.qsize()})")
         logger.info("=" * 50)
+
+        try:
+            await send_scan_summary(len(companies), len(all_jobs), new_count)
+        except Exception as exc:
+            logger.warning(f"Scan summary notification failed: {exc}")
+
         return _last_result
 
     except Exception as exc:
