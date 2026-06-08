@@ -69,7 +69,18 @@ def zero_result_companies(db: Session = Depends(get_db)):
         .all()
     )
     if not runs:
-        return {"last_run_at": None, "companies": []}
+        # Distinguish "no scan has run with this instrumentation yet" from
+        # "every company passed" — otherwise the UI can't tell the difference
+        # and would misleadingly show an all-clear.
+        most_recent = (
+            db.query(ScrapeRun).order_by(ScrapeRun.started_at.desc()).first()
+        )
+        return {
+            "has_data": False,
+            "last_run_at": most_recent.started_at if most_recent else None,
+            "checked_runs": 0,
+            "companies": [],
+        }
 
     # How many of the last `len(runs)` runs did each company strike out on?
     streaks: dict[str, int] = {}
@@ -110,6 +121,7 @@ def zero_result_companies(db: Session = Depends(get_db)):
     companies.sort(key=lambda c: (-c["streak"], c["name"]))
 
     return {
+        "has_data": True,
         "last_run_at": latest.started_at,
         "checked_runs": len(runs),
         "companies": companies,

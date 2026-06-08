@@ -969,11 +969,20 @@
 
             <template x-if="!zeroResults.loading && zeroResults.data">
               <div>
-                <div x-show="zeroResults.data.companies.length === 0" class="text-muted text-sm" style="padding: 12px 6px;">
-                  🎉 Every company returned at least one matching job on the last scan.
+                <div x-show="zeroResults.data.has_data === false" class="text-muted text-sm" style="padding: 12px 6px;">
+                  ⏳ No scan has run yet with zero-result tracking enabled
+                  <template x-if="zeroResults.data.last_run_at">
+                    <span> — last scan was <span x-text="new Date(zeroResults.data.last_run_at).toLocaleString()"></span>, before this report existed</span>
+                  </template>.
+                  Trigger a new scan (or wait for the next scheduled run) and refresh this report.
                 </div>
 
-                <div x-show="zeroResults.data.companies.length > 0">
+                <div x-show="zeroResults.data.has_data && zeroResults.data.companies.length === 0" class="text-muted text-sm" style="padding: 12px 6px;">
+                  🎉 Every company returned at least one matching job on the
+                  <span x-text="zeroResults.data.last_run_at ? new Date(zeroResults.data.last_run_at).toLocaleString() : 'last'"></span> scan.
+                </div>
+
+                <div x-show="zeroResults.data.has_data && zeroResults.data.companies.length > 0">
                   <div class="text-xs text-muted mb-2">
                     <span x-text="zeroResults.data.companies.length"></span> of
                     <span x-text="(scout.companies || []).length"></span> companies struck out on the
