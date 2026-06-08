@@ -269,6 +269,7 @@
     .text-sm { font-size: 13px; }
     .text-xs { font-size: 12px; }
     .text-muted { color: #64748b; }
+    .text-warn { color: #fbbf24; }
     .text-accent { color: #818cf8; }
     .divider { border: none; border-top: 1px solid #2d3148; margin: 20px 0; }
     .loading { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 14px; }
@@ -950,6 +951,58 @@
                 No companies match your filter.
               </div>
             </div>
+          </div>
+
+          <!-- Zero-Result Companies (RCA) -->
+          <div class="card" style="margin-top:24px;" x-init="loadZeroResults()">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f1f5f9; margin-bottom:3px;">Zero-Result Companies</div>
+                <div class="text-xs text-muted">
+                  Companies that returned 0 keyword-matching jobs on the most recent scan — start RCA here
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="loadZeroResults()" :disabled="zeroResults.loading">↻ Refresh</button>
+            </div>
+
+            <div x-show="zeroResults.loading" class="loading" style="margin: 16px 0;"><span class="spinner"></span> Loading…</div>
+
+            <template x-if="!zeroResults.loading && zeroResults.data">
+              <div>
+                <div x-show="zeroResults.data.companies.length === 0" class="text-muted text-sm" style="padding: 12px 6px;">
+                  🎉 Every company returned at least one matching job on the last scan.
+                </div>
+
+                <div x-show="zeroResults.data.companies.length > 0">
+                  <div class="text-xs text-muted mb-2">
+                    <span x-text="zeroResults.data.companies.length"></span> of
+                    <span x-text="(scout.companies || []).length"></span> companies struck out on the
+                    <span x-text="zeroResults.data.last_run_at ? new Date(zeroResults.data.last_run_at).toLocaleString() : '—'"></span> scan
+                    — streak counted across the last <span x-text="zeroResults.data.checked_runs"></span> run(s)
+                  </div>
+
+                  <div style="max-height: 420px; overflow-y: auto; border: 1px solid #2d3148; border-radius: 8px; padding: 0 8px;">
+                    <template x-for="co in zeroResults.data.companies" :key="co.name">
+                      <div class="val-row" style="grid-template-columns: 1.4fr 2fr auto auto;">
+                        <span class="val-name" :title="co.name" x-text="co.name"></span>
+                        <a class="val-url" :href="co.url" target="_blank" :title="co.url" x-text="co.url"></a>
+                        <span class="text-xs" :class="co.streak > 1 ? 'text-warn' : 'text-muted'"
+                              :title="`Zero results in ${co.streak} of the last ${co.checked_runs} run(s)`"
+                              x-text="co.streak > 1 ? `🔥 ${co.streak}-run streak` : 'first miss'"></span>
+                        <button class="val-edit-btn" title="Debug this company"
+                          @click="showToast('Run: python scripts/debug_company.py \'' + co.name + '\'')">🩺</button>
+                      </div>
+                    </template>
+                  </div>
+
+                  <div class="text-xs text-muted mt-3">
+                    Tip: run <code>python scripts/debug_company.py "&lt;Company Name&gt;"</code> or set
+                    <code>SCOUT_DEBUG_COMPANY=&lt;name&gt;</code> for verbose logs to pinpoint where the
+                    scrape drops to zero (page load, "Open Roles" link, ATS detection, or keyword filter).
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </template>
@@ -1651,6 +1704,12 @@ function app() {
       editSaving: false,
     },
 
+    // Zero-result companies report (RCA helper on the Analytics page)
+    zeroResults: {
+      data: null,
+      loading: false,
+    },
+
     // Toast
     toast: { show: false, msg: '' },
 
@@ -1817,6 +1876,19 @@ function app() {
         this.scout.companies = await companiesRes.json();
       } finally {
         this.foundJobs.analyticsLoading = false;
+      }
+    },
+
+    async loadZeroResults() {
+      if (this.zeroResults.loading) return;
+      this.zeroResults.loading = true;
+      try {
+        const r = await fetch('/scrape/zero-results');
+        this.zeroResults.data = await r.json();
+      } catch (e) {
+        this.zeroResults.data = { last_run_at: null, checked_runs: 0, companies: [] };
+      } finally {
+        this.zeroResults.loading = false;
       }
     },
 

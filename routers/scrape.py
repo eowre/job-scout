@@ -54,6 +54,68 @@ def list_runs(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/zero-results")
+def zero_result_companies(db: Session = Depends(get_db)):
+    """
+    RCA helper: which companies returned 0 keyword-matching jobs on the most
+    recent scan, plus how many of the last N runs they've struck out on —
+    useful for spotting a one-off blip vs. a scraper that needs attention.
+    """
+    runs = (
+        db.query(ScrapeRun)
+        .filter(ScrapeRun.zero_result_companies.isnot(None))
+        .order_by(ScrapeRun.started_at.desc())
+        .limit(10)
+        .all()
+    )
+    if not runs:
+        return {"last_run_at": None, "companies": []}
+
+    # How many of the last `len(runs)` runs did each company strike out on?
+    streaks: dict[str, int] = {}
+    for r in runs:
+        try:
+            names = json.loads(r.zero_result_companies) or []
+        except Exception:
+            names = []
+        for name in names:
+            streaks[name] = streaks.get(name, 0) + 1
+
+    latest = runs[0]
+    try:
+        latest_names = json.loads(latest.zero_result_companies) or []
+    except Exception:
+        latest_names = []
+
+    # Pull career-page URLs from companies.json so the user can jump straight
+    # to the source when investigating.
+    url_by_name = {}
+    try:
+        with open(COMPANIES_PATH, encoding="utf-8") as f:
+            for c in json.load(f):
+                url_by_name[c["name"]] = c.get("url", "")
+    except Exception:
+        pass
+
+    companies = [
+        {
+            "name": name,
+            "url": url_by_name.get(name, ""),
+            "streak": streaks.get(name, 1),
+            "checked_runs": len(runs),
+        }
+        for name in latest_names
+    ]
+    # Worst offenders first
+    companies.sort(key=lambda c: (-c["streak"], c["name"]))
+
+    return {
+        "last_run_at": latest.started_at,
+        "checked_runs": len(runs),
+        "companies": companies,
+    }
+
+
 @router.get("/companies")
 def list_companies():
     with open(COMPANIES_PATH, encoding="utf-8") as f:

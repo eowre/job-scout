@@ -777,7 +777,7 @@ async def _scrape_company(
 # Core async implementation
 # ---------------------------------------------------------------------------
 
-async def _scrape_all_async(companies: list) -> List[ScrapedJob]:
+async def _scrape_all_async(companies: list) -> Tuple[List[ScrapedJob], Dict[str, dict]]:
     enabled = [c for c in companies if c.get("enabled", True)]
     logger.info(f"Hybrid scrape starting — {len(enabled)} companies")
 
@@ -801,17 +801,23 @@ async def _scrape_all_async(companies: list) -> List[ScrapedJob]:
             await browser.close()
 
     all_jobs: List[ScrapedJob] = []
+    # Per-company breakdown — used to surface "zero-result" companies in the
+    # analytics UI so the user can quickly spot scrapers that need RCA.
+    breakdown: Dict[str, dict] = {}
     for company, result in zip(enabled, results):
+        co_name = company["name"]
         if isinstance(result, list):
             all_jobs.extend(result)
+            breakdown[co_name] = {"count": len(result), "error": None}
         else:
-            logger.error(f"[{company['name']}] Unhandled: {result}")
+            logger.error(f"[{co_name}] Unhandled: {result}")
+            breakdown[co_name] = {"count": 0, "error": str(result)[:200]}
 
     logger.info(f"Scrape complete — {len(all_jobs)} keyword-matching job(s) total")
-    return all_jobs
+    return all_jobs, breakdown
 
 
-def _scrape_all_sync(companies: list) -> List[ScrapedJob]:
+def _scrape_all_sync(companies: list) -> Tuple[List[ScrapedJob], Dict[str, dict]]:
     """Windows shim: run in a thread with ProactorEventLoop for subprocess support."""
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
@@ -902,9 +908,12 @@ async def browser_check_urls(urls: List[str]) -> Dict[str, dict]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-async def scrape_all(companies: list) -> List[ScrapedJob]:
+async def scrape_all_with_breakdown(companies: list) -> Tuple[List[ScrapedJob], Dict[str, dict]]:
     """
-    Scrape all enabled companies using the hybrid Playwright + ATS API strategy.
+    Scrape all enabled companies using the hybrid Playwright + ATS API strategy,
+    returning both the flat job list and a per-company breakdown:
+        { company_name: {"count": int, "error": str|None} }
+    The breakdown is what powers the "zero-result companies" RCA report.
     On Windows, delegates to a ProactorEventLoop thread to support subprocesses.
     """
     if sys.platform == "win32":
@@ -912,3 +921,13 @@ async def scrape_all(companies: list) -> List[ScrapedJob]:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             return await loop.run_in_executor(pool, _scrape_all_sync, companies)
     return await _scrape_all_async(companies)
+
+
+async def scrape_all(companies: list) -> List[ScrapedJob]:
+    """
+    Scrape all enabled companies using the hybrid Playwright + ATS API strategy.
+    Convenience wrapper around scrape_all_with_breakdown() for callers that
+    only care about the flat job list (e.g. single-company scans).
+    """
+    jobs, _breakdown = await scrape_all_with_breakdown(companies)
+    return jobs

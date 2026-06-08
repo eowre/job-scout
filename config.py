@@ -31,6 +31,22 @@ JOB_KEYWORDS = [
     "forward deployed",
 ]
 
+# ---------------------------------------------------------------------------
+# Discord alert filter
+#
+# All keyword-matching jobs above are still scraped, parsed, and saved to the
+# database regardless of title. But Discord notifications (per-job alerts)
+# are noisy — the user only wants to be pinged for "Forward Deployed
+# Engineer" roles or close variants. Jobs that don't match these patterns are
+# still recorded and visible in the Found Jobs UI; they just won't trigger a
+# Discord alert.
+# ---------------------------------------------------------------------------
+ALERT_KEYWORDS = [
+    "forward deployed",
+    "forward-deployed",
+    "fde",
+]
+
 # If a title contains ANY of these, skip it (even if it matched above).
 EXCLUDE_KEYWORDS: list[str] = [
     # "intern",

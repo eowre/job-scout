@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Optional
 
 from database import SessionLocal, DiscoveredJob, ScrapeRun
-from services.scraper import scrape_all
-from services.notifier import send_alert, send_scan_summary
+from services.scraper import scrape_all, scrape_all_with_breakdown
+from services.notifier import send_alert, send_scan_summary, _is_alert_worthy
 
 logger = logging.getLogger(__name__)
 
@@ -191,11 +191,18 @@ async def run_scan() -> dict:
 
     try:
         companies = load_companies()
-        all_jobs = await scrape_all(companies)
+        all_jobs, breakdown = await scrape_all_with_breakdown(companies)
         logger.info(f"Scraped {len(all_jobs)} keyword-matching jobs from {len(companies)} companies")
+
+        zero_result = sorted(
+            name for name, info in breakdown.items() if info.get("count", 0) == 0
+        )
+        if zero_result:
+            logger.info(f"  Zero-result companies this run ({len(zero_result)}): {', '.join(zero_result)}")
 
         db = SessionLocal()
         new_count = 0
+        fde_new_count = 0
         try:
             for job in all_jobs:
                 existing = db.query(DiscoveredJob).filter(
@@ -203,6 +210,9 @@ async def run_scan() -> dict:
                 ).first()
                 if existing:
                     continue
+
+                if _is_alert_worthy(job.title):
+                    fde_new_count += 1
 
                 db_job = DiscoveredJob(
                     ats_job_id=job.job_id,
@@ -232,6 +242,7 @@ async def run_scan() -> dict:
                 companies_scraped=len(companies),
                 jobs_found=len(all_jobs),
                 jobs_new=new_count,
+                zero_result_companies=json.dumps(zero_result),
             )
             db.add(run)
             db.commit()
@@ -243,13 +254,14 @@ async def run_scan() -> dict:
             "companies_scraped": len(companies),
             "jobs_found": len(all_jobs),
             "jobs_new": new_count,
+            "zero_result_companies": zero_result,
         }
         logger.info(f"Scan complete — {new_count} new job(s) queued for parsing "
                     f"(queue depth: {_parse_queue.qsize()})")
         logger.info("=" * 50)
 
         try:
-            await send_scan_summary(len(companies), len(all_jobs), new_count)
+            await send_scan_summary(len(companies), len(all_jobs), new_count, fde_new_count)
         except Exception as exc:
             logger.warning(f"Scan summary notification failed: {exc}")
 

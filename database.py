@@ -85,6 +85,9 @@ class ScrapeRun(Base):
     companies_scraped = Column(Integer, default=0)
     jobs_found = Column(Integer, default=0)
     jobs_new = Column(Integer, default=0)
+    # JSON list of company names that returned 0 keyword-matching jobs this run —
+    # powers the "zero-result companies" RCA report in the analytics UI.
+    zero_result_companies = Column(Text, nullable=True)
 
 
 def get_db():
@@ -112,6 +115,17 @@ def _migrate():
         }
         with engine.connect() as conn:
             for col, sql in dj_migrations.items():
+                if col not in existing:
+                    conn.execute(text(sql))
+                    conn.commit()
+
+    if "scrape_runs" in tables:
+        existing = {col["name"] for col in inspector.get_columns("scrape_runs")}
+        sr_migrations = {
+            "zero_result_companies": "ALTER TABLE scrape_runs ADD COLUMN zero_result_companies TEXT",
+        }
+        with engine.connect() as conn:
+            for col, sql in sr_migrations.items():
                 if col not in existing:
                     conn.execute(text(sql))
                     conn.commit()

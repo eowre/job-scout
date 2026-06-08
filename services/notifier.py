@@ -5,9 +5,21 @@ import logging
 
 import aiohttp
 
-from config import DISCORD_WEBHOOK_URL, SLACK_WEBHOOK_URL
+from config import DISCORD_WEBHOOK_URL, SLACK_WEBHOOK_URL, ALERT_KEYWORDS
 
 logger = logging.getLogger(__name__)
+
+
+def _is_alert_worthy(title: str) -> bool:
+    """
+    Decide whether a job's title is interesting enough to trigger a Discord/
+    Slack ping. All matching jobs are still scraped and saved regardless —
+    this only gates the noisy per-job notification.
+    """
+    if not title:
+        return False
+    title_lower = title.lower()
+    return any(kw in title_lower for kw in ALERT_KEYWORDS)
 
 
 async def _discord(job) -> None:
@@ -70,6 +82,10 @@ async def _slack(job) -> None:
 
 
 async def send_alert(job) -> None:
+    if not _is_alert_worthy(job.title):
+        logger.debug(f"  → Alert skipped (not FDE-like): {job.title} @ {job.company}")
+        return
+
     sent = False
 
     if DISCORD_WEBHOOK_URL:
@@ -84,14 +100,23 @@ async def send_alert(job) -> None:
         print(f"\n[NEW JOB] {job.title} @ {job.company} — {job.url}")
 
 
-async def send_scan_summary(companies_scraped: int, jobs_found: int, jobs_new: int) -> None:
-    """Send a single summary message at the end of each scan."""
+async def send_scan_summary(companies_scraped: int, jobs_found: int, jobs_new: int,
+                             fde_new: int = 0) -> None:
+    """Send a single summary message at the end of each scan.
+
+    `fde_new` is the count of newly-discovered jobs that match the FDE alert
+    keywords — surfaced prominently since that's what the user actually cares
+    about being pinged for. All jobs are still scraped/recorded regardless.
+    """
     if not DISCORD_WEBHOOK_URL:
         return
 
-    if jobs_new > 0:
-        color = 0x34D399   # green — found something
-        title = f"🎯 {jobs_new} new job{'s' if jobs_new != 1 else ''} found"
+    if fde_new > 0:
+        color = 0x34D399   # green — an FDE-like role showed up
+        title = f"🎯 {fde_new} Forward Deployed-style job{'s' if fde_new != 1 else ''} found!"
+    elif jobs_new > 0:
+        color = 0x818CF8   # indigo — other new jobs, but nothing FDE-like
+        title = f"🔭 Scan complete — {jobs_new} new job{'s' if jobs_new != 1 else ''} (none FDE-like)"
     else:
         color = 0x475569   # grey — nothing new
         title = "🔭 Scan complete — no new jobs"
@@ -103,6 +128,7 @@ async def send_scan_summary(companies_scraped: int, jobs_found: int, jobs_new: i
             {"name": "Companies scanned", "value": str(companies_scraped), "inline": True},
             {"name": "Total matches",     "value": str(jobs_found),        "inline": True},
             {"name": "New this scan",     "value": str(jobs_new),          "inline": True},
+            {"name": "FDE-like (new)",    "value": str(fde_new),           "inline": True},
         ],
         "footer": {"text": "Job Scout • scan summary"},
     }
