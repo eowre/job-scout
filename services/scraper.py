@@ -239,19 +239,33 @@ _ATS_HOSTS = {"greenhouse.io", "lever.co", "ashbyhq.com"}
 
 
 def _parse_raw_links(raw: list, base_url: str) -> List[Tuple[str, str]]:
-    """Convert the raw JS link list into de-duplicated (text, abs_href) pairs."""
-    pairs, seen = [], set()
+    """
+    Convert the raw JS link list into de-duplicated (text, abs_href) pairs.
+
+    Pages often link to the same URL with multiple labels (e.g. a nav item
+    "Job Search" and a CTA "Explore open roles" both pointing at /positions).
+    Naively keeping whichever text appears first can hide the one label that
+    _OPEN_ROLES_RE would have recognized. So when we see a duplicate href,
+    we keep the existing entry UNLESS the new text matches _OPEN_ROLES_RE and
+    the existing one doesn't — that way the most useful label wins.
+    """
+    pairs_by_href: Dict[str, str] = {}
+    order: List[str] = []
     for item in raw:
         text = (item.get("text") or "").strip()
         href = (item.get("href") or "").strip()
         if not text or not href or href.startswith("mailto:"):
             continue
         abs_href = _absolute(href, base_url)
-        if abs_href in seen:
-            continue
-        seen.add(abs_href)
-        pairs.append((text, abs_href))
-    return pairs
+        if abs_href not in pairs_by_href:
+            pairs_by_href[abs_href] = text
+            order.append(abs_href)
+        else:
+            existing = pairs_by_href[abs_href]
+            if _OPEN_ROLES_RE.search(text) and not _OPEN_ROLES_RE.search(existing):
+                pairs_by_href[abs_href] = text
+
+    return [(pairs_by_href[href], href) for href in order]
 
 
 def _find_open_roles_link(pairs: List[Tuple[str, str]], base_url: str) -> Optional[str]:
