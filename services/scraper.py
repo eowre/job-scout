@@ -230,6 +230,7 @@ _OPEN_ROLES_RE = re.compile(
     r"|current\s+(?:job\s+)?openings?"
     r"|job\s+openings?"
     r"|(?:explore|browse)\s+(?:jobs?|roles?|opportunities)"
+    r"|check(?:\s+out)?(?:\s+(?:our|the|all))?\s+(?:open(?:ings?|\s+(?:roles?|positions?|jobs?))?|jobs?|roles?|positions?|opportunities)"
     r")",
     re.I,
 )
@@ -455,80 +456,94 @@ async def _fetch_lever_job(
 
 
 # ---------------------------------------------------------------------------
-# Step 2c — Ashby GraphQL (batch: fetch whole board, filter to found IDs)
+# Step 2c — Ashby per-job fetch
 # ---------------------------------------------------------------------------
+# Ashby changed their jobBoardWithTeams schema (type is now
+# JobPostingBriefsWithIdsAndTeamId which removed departmentName, isRemote,
+# externalLink, descriptionHtml, publishedDate).  We now fetch each matched
+# job individually via the jobPosting query which still returns full details.
 
-_ASHBY_QUERY = """
-query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
-  jobBoard: jobBoardWithTeams(
+_ASHBY_JOB_QUERY = """
+query ApiJobPosting(
+  $organizationHostedJobsPageName: String!
+  $jobPostingId: String!
+) {
+  jobPosting(
     organizationHostedJobsPageName: $organizationHostedJobsPageName
+    jobPostingId: $jobPostingId
   ) {
-    jobPostings {
-      id title locationName departmentName isRemote
-      externalLink descriptionHtml publishedDate
-    }
+    id title locationName departmentName descriptionHtml publishedDate
   }
 }
 """
 
+async def _fetch_single_ashby_job(
+    session: aiohttp.ClientSession,
+    co_id: str,
+    job_id: str,
+    co_name: str,
+    http_sem: asyncio.Semaphore,
+) -> Optional[dict]:
+    """Fetch one Ashby job posting's full details. Returns the jobPosting dict or None."""
+    payload = {
+        "operationName": "ApiJobPosting",
+        "variables": {
+            "organizationHostedJobsPageName": co_id,
+            "jobPostingId": job_id,
+        },
+        "query": _ASHBY_JOB_QUERY,
+    }
+    api_url = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting"
+    async with http_sem:
+        async with session.post(api_url, json=payload, timeout=_TIMEOUT) as r:
+            if r.status != 200:
+                raise ValueError(f"HTTP {r.status}")
+            data = await r.json(content_type=None)
+    if data.get("errors") and not (data.get("data") or {}).get("jobPosting"):
+        msg = data["errors"][0].get("message", "unknown GraphQL error")
+        raise ValueError(f"Ashby GraphQL error: {msg}")
+    return (data.get("data") or {}).get("jobPosting")
+
+
 async def _fetch_ashby_jobs(
     session: aiohttp.ClientSession,
     co_id: str,
-    wanted_ids: set,          # job IDs discovered on the career page
-    wanted_urls: Dict[str, Tuple[str, str]],  # job_id -> (title, url)
+    wanted_ids: set,                            # job IDs discovered on the career page
+    wanted_urls: Dict[str, Tuple[str, str]],    # job_id -> (title, url)
     co_name: str,
     co_slug: str,
     http_sem: asyncio.Semaphore,
 ) -> List[ScrapedJob]:
-    """Fetch the full Ashby board and return only jobs whose ID is in wanted_ids."""
-    payload = {
-        "operationName": "ApiJobBoardWithTeams",
-        "variables": {"organizationHostedJobsPageName": co_id},
-        "query": _ASHBY_QUERY,
-    }
-    api_url = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
-    _dlog(co_name, f"  ASH API POST {api_url}  org={co_id!r}  wanted_ids={wanted_ids}")
-    async with http_sem:
-        try:
-            async with session.post(api_url, json=payload, timeout=_TIMEOUT) as r:
-                _dlog(co_name, f"  ASH API → HTTP {r.status}")
-                if r.status != 200:
-                    raise ValueError(f"HTTP {r.status}")
-                data = await r.json(content_type=None)
-        except Exception as exc:
-            logger.warning(f"[{co_name}] Ashby API error: {exc}")
-            # Fall back: return minimal ScrapedJobs from the Playwright links
-            return [
-                ScrapedJob(job_id=_stable_id(co_slug, url), company=co_name,
-                           title=title, url=url)
-                for _, (title, url) in wanted_urls.items()
-            ]
+    """Fetch each matched Ashby job individually and return ScrapedJob objects."""
 
-    postings = (data.get("data") or {}).get("jobBoard", {}).get("jobPostings", [])
-    _dlog(co_name, f"  ASH API → {len(postings)} total postings in board, filtering to {len(wanted_ids)} wanted")
-    jobs = []
-    for j in postings:
-        jid = j.get("id", "")
-        if jid not in wanted_ids:
-            continue
-        _dlog(co_name, f"  ASH API   matched posting id={jid!r}  title={j.get('title')!r}")
-        title, url = wanted_urls.get(jid, (j.get("title", ""), ""))
-        if not url:
-            url = j.get("externalLink") or f"https://jobs.ashbyhq.com/{co_id}/{jid}"
-        loc = j.get("locationName", "")
-        if not loc and j.get("isRemote"):
-            loc = "Remote"
-        jobs.append(ScrapedJob(
-            job_id      = _stable_id(co_slug, url),
-            company     = co_name,
-            title       = j.get("title", title),
-            url         = url,
-            description = _strip_html(j.get("descriptionHtml", "")),
-            location    = loc,
-            department  = j.get("departmentName", ""),
-            posted_date = _parse_iso(j.get("publishedDate", "")),
-        ))
-    return jobs
+    async def _one(jid: str) -> Optional[ScrapedJob]:
+        title, url = wanted_urls.get(jid, ("", ""))
+        job_url = url or f"https://jobs.ashbyhq.com/{co_id}/{jid}"
+        _dlog(co_name, f"  ASH JOB  id={jid!r}  title={title!r}  url={job_url!r}")
+        try:
+            jp = await _fetch_single_ashby_job(session, co_id, jid, co_name, http_sem)
+            if jp:
+                return ScrapedJob(
+                    job_id      = _stable_id(co_slug, job_url),
+                    company     = co_name,
+                    title       = jp.get("title") or title,
+                    url         = job_url,
+                    description = _strip_html(jp.get("descriptionHtml", "")),
+                    location    = jp.get("locationName", ""),
+                    department  = jp.get("departmentName", ""),
+                    posted_date = _parse_iso(jp.get("publishedDate", "")),
+                )
+        except Exception as exc:
+            logger.warning(f"[{co_name}] Ashby job fetch failed for {jid}: {exc}")
+        # Fallback: minimal job built from scraped link data
+        if title and job_url:
+            return ScrapedJob(
+                job_id=_stable_id(co_slug, job_url), company=co_name,
+                title=title, url=job_url)
+        return None
+
+    results = await asyncio.gather(*[_one(jid) for jid in wanted_ids])
+    return [r for r in results if r is not None]
 
 
 # ---------------------------------------------------------------------------
