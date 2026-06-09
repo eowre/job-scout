@@ -111,10 +111,18 @@ def get_db():
 # ---------------------------------------------------------------------------
 
 _SETTING_DEFAULTS = {
+    # AI parser
     "parser_backend":  "ollama",
     "ollama_model":    "llama3.1:8b",
     "ollama_base_url": "http://host.docker.internal:11434",
     "anthropic_model": "claude-haiku-4-5-20251001",
+    # Notifications
+    "discord_webhook_url": "",
+    "slack_webhook_url":   "",
+    # Alert filter — JSON array of keywords that trigger a ping
+    "alert_keywords": '["forward deployed", "forward-deployed", "fde"]',
+    # Scrape schedule
+    "check_interval_hours": "2",
 }
 
 
@@ -206,10 +214,12 @@ def _seed_settings() -> None:
     """
     import os
     env_overrides = {
-        "parser_backend":  os.getenv("PARSER_BACKEND"),
-        "ollama_model":    os.getenv("OLLAMA_MODEL"),
-        "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
-        "anthropic_model": os.getenv("ANTHROPIC_MODEL"),
+        "parser_backend":      os.getenv("PARSER_BACKEND"),
+        "ollama_model":        os.getenv("OLLAMA_MODEL"),
+        "ollama_base_url":     os.getenv("OLLAMA_BASE_URL"),
+        "anthropic_model":     os.getenv("ANTHROPIC_MODEL"),
+        "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL"),
+        "slack_webhook_url":   os.getenv("SLACK_WEBHOOK_URL"),
     }
     db = SessionLocal()
     try:

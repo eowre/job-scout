@@ -1639,109 +1639,254 @@
   </div>
 
   <!-- SETTINGS PAGE -->
-  <div x-show="page==='settings'" style="display:none; max-width:640px;">
-    <div class="page-title">Settings</div>
-    <div class="page-sub">Configure the AI parser backend and model — changes take effect immediately, no restart needed.</div>
-
-    <!-- AI Backend card -->
-    <div class="card mb-4">
-      <div class="section-title" style="margin-bottom:16px;">AI Parser Backend</div>
-
-      <!-- Backend toggle -->
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-        <div @click="settings.parser_backend='ollama'"
-             :style="settings.parser_backend==='ollama' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
-             style="border:2px solid #2d3148; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.15s; text-align:center;">
-          <div style="font-size:22px; margin-bottom:6px;">🖥️</div>
-          <div style="font-size:14px; font-weight:600; color:#e2e8f0;">Ollama</div>
-          <div style="font-size:12px; color:#64748b; margin-top:4px;">Local · Free · Private</div>
-        </div>
-        <div @click="settings.parser_backend='anthropic'"
-             :style="settings.parser_backend==='anthropic' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
-             style="border:2px solid #2d3148; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.15s; text-align:center;">
-          <div style="font-size:22px; margin-bottom:6px;">☁️</div>
-          <div style="font-size:14px; font-weight:600; color:#e2e8f0;">Anthropic</div>
-          <div style="font-size:12px; color:#64748b; margin-top:4px;">Cloud · Requires API key</div>
-        </div>
+  <div x-show="page==='settings'" style="display:none;">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <div class="page-title">Settings</div>
+        <div class="page-sub">All changes take effect immediately — no restart needed.</div>
       </div>
-
-      <!-- Ollama config -->
-      <div x-show="settings.parser_backend==='ollama'">
-        <div class="form-row">
-          <label>Ollama URL</label>
-          <input type="text" x-model="settings.ollama_base_url" placeholder="http://host.docker.internal:11434">
-        </div>
-        <div class="form-row">
-          <label>Model
-            <span style="font-weight:400; color:#475569; margin-left:6px;">— select installed or type any tag</span>
-          </label>
-          <div style="display:flex; gap:8px;">
-            <input type="text" x-model="settings.ollama_model" placeholder="llama3.1:8b" style="flex:1;">
-            <button class="btn btn-ghost btn-sm" @click="loadOllamaModels()" :disabled="settingsLoadingModels"
-                    title="Refresh model list from Ollama">
-              <span x-show="!settingsLoadingModels">↻</span>
-              <span x-show="settingsLoadingModels" class="spinner" style="width:14px;height:14px;"></span>
-            </button>
-          </div>
-          <!-- Installed models dropdown -->
-          <div x-show="settingsOllamaModels.length > 0" style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
-            <template x-for="m in settingsOllamaModels" :key="m">
-              <button class="btn btn-ghost btn-sm"
-                      :style="settings.ollama_model===m ? 'border-color:#818cf8;color:#818cf8;' : ''"
-                      @click="settings.ollama_model=m"
-                      x-text="m"></button>
-            </template>
-          </div>
-          <div x-show="settingsOllamaReachable===false" class="text-warn text-xs mt-2">
-            ⚠ Ollama unreachable at <span x-text="settings.ollama_base_url"></span> — is it running?
-          </div>
-          <div x-show="settingsOllamaReachable===true && settingsOllamaModels.length===0" class="text-muted text-xs mt-2">
-            Ollama is reachable but no models installed yet. Run: <code style="background:#0f1117;padding:1px 6px;border-radius:4px;">ollama pull llama3.1:8b</code>
-          </div>
-        </div>
-      </div>
-
-      <!-- Anthropic config -->
-      <div x-show="settings.parser_backend==='anthropic'">
-        <div class="form-row">
-          <label>Model</label>
-          <input type="text" x-model="settings.anthropic_model" placeholder="claude-haiku-4-5-20251001">
-          <div style="margin-top:6px; font-size:12px; color:#64748b;">
-            Common options: <code style="background:#0f1117;padding:1px 6px;border-radius:4px;">claude-haiku-4-5-20251001</code>
-            &nbsp;<code style="background:#0f1117;padding:1px 6px;border-radius:4px;">claude-3-5-sonnet-20241022</code>
-          </div>
-        </div>
-      </div>
-
-      <!-- Save -->
-      <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+      <div class="flex gap-2 items-center">
         <button class="btn btn-primary" @click="saveSettings()" :disabled="settingsSaving">
-          <span x-show="!settingsSaving">Save Settings</span>
-          <span x-show="settingsSaving" class="spinner" style="width:14px;height:14px;"></span>
+          <span x-show="!settingsSaving">💾 Save Settings</span>
+          <span x-show="settingsSaving" class="spinner" style="width:14px;height:14px;margin-right:6px;"></span>
+          <span x-show="settingsSaving">Saving…</span>
         </button>
         <span x-show="settingsMsg" x-text="settingsMsg"
-              :style="settingsMsg.startsWith('✓') ? 'color:#4ade80;' : 'color:#f87171;'"
-              style="font-size:13px;"></span>
+              :style="settingsMsg.startsWith('✓') ? 'color:#4ade80;font-size:13px;' : 'color:#f87171;font-size:13px;'"></span>
       </div>
     </div>
 
-    <!-- Current config summary -->
-    <div class="card" style="font-size:13px;">
-      <div class="section-title" style="margin-bottom:12px;">Active Configuration</div>
-      <div style="display:flex; flex-direction:column; gap:8px; color:#94a3b8;">
-        <div style="display:flex; justify-content:space-between;">
-          <span>Backend</span>
-          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#818cf8;" x-text="settings.parser_backend"></code>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+
+      <!-- ── LEFT COLUMN ─────────────────────────────────────── -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+
+        <!-- AI Parser Backend -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:14px;">🤖 AI Parser Backend</div>
+
+          <!-- Backend toggle -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+            <div @click="settings.parser_backend='ollama'"
+                 :style="settings.parser_backend==='ollama' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
+                 style="border:2px solid #2d3148; border-radius:10px; padding:14px; cursor:pointer; transition:all 0.15s; text-align:center;">
+              <div style="font-size:20px; margin-bottom:5px;">🖥️</div>
+              <div style="font-size:13px; font-weight:600; color:#e2e8f0;">Ollama</div>
+              <div style="font-size:11px; color:#64748b; margin-top:3px;">Local · Free · Private</div>
+            </div>
+            <div @click="settings.parser_backend='anthropic'"
+                 :style="settings.parser_backend==='anthropic' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
+                 style="border:2px solid #2d3148; border-radius:10px; padding:14px; cursor:pointer; transition:all 0.15s; text-align:center;">
+              <div style="font-size:20px; margin-bottom:5px;">☁️</div>
+              <div style="font-size:13px; font-weight:600; color:#e2e8f0;">Anthropic</div>
+              <div style="font-size:11px; color:#64748b; margin-top:3px;">Cloud · Requires API key</div>
+            </div>
+          </div>
+
+          <!-- Ollama config -->
+          <div x-show="settings.parser_backend==='ollama'">
+            <!-- Status indicator -->
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; padding:8px 12px; background:#0f1117; border-radius:8px; border:1px solid #2d3148;">
+              <div :style="settingsOllamaReachable===true ? 'background:#4ade80;' : settingsOllamaReachable===false ? 'background:#f87171;' : 'background:#475569;'"
+                   style="width:8px; height:8px; border-radius:50%; flex-shrink:0; transition:background 0.3s;"></div>
+              <span style="font-size:12px;" :style="settingsOllamaReachable===true ? 'color:#4ade80;' : settingsOllamaReachable===false ? 'color:#f87171;' : 'color:#64748b;'"
+                    x-text="settingsOllamaReachable===true ? 'Ollama reachable' : settingsOllamaReachable===false ? 'Ollama unreachable' : 'Checking…'"></span>
+              <button @click="loadOllamaModels()" :disabled="settingsLoadingModels"
+                      style="margin-left:auto; background:none; border:none; color:#475569; cursor:pointer; font-size:13px; padding:0;"
+                      title="Refresh">
+                <span x-show="!settingsLoadingModels">↻</span>
+                <span x-show="settingsLoadingModels" class="spinner" style="width:12px;height:12px;"></span>
+              </button>
+            </div>
+            <div class="form-row">
+              <label>Ollama URL</label>
+              <input type="text" x-model="settings.ollama_base_url" placeholder="http://host.docker.internal:11434">
+            </div>
+            <div class="form-row" style="margin-bottom:0;">
+              <label>Model <span style="font-weight:400;color:#475569;">— click installed or type any tag</span></label>
+              <input type="text" x-model="settings.ollama_model" placeholder="llama3.1:8b" style="margin-bottom:8px;">
+              <div x-show="settingsOllamaModels.length > 0" style="display:flex; flex-wrap:wrap; gap:6px;">
+                <template x-for="m in settingsOllamaModels" :key="m.name">
+                  <button class="btn btn-ghost btn-sm"
+                          :style="settings.ollama_model===m.name ? 'border-color:#818cf8;color:#818cf8;' : ''"
+                          @click="settings.ollama_model=m.name">
+                    <span x-text="m.name"></span>
+                    <span x-show="m.size_gb > 0" x-text="' · '+m.size_gb+'GB'" style="color:#475569;"></span>
+                  </button>
+                </template>
+              </div>
+              <div x-show="settingsOllamaReachable===true && settingsOllamaModels.length===0" class="text-muted text-xs mt-2">
+                No models installed. Run: <code style="background:#0f1117;padding:1px 6px;border-radius:4px;">ollama pull llama3.1:8b</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- Anthropic config -->
+          <div x-show="settings.parser_backend==='anthropic'">
+            <div class="form-row" style="margin-bottom:0;">
+              <label>Model</label>
+              <input type="text" x-model="settings.anthropic_model" placeholder="claude-haiku-4-5-20251001">
+              <div style="margin-top:6px; font-size:12px; color:#64748b; display:flex; flex-wrap:wrap; gap:6px;">
+                <button class="btn btn-ghost btn-sm" @click="settings.anthropic_model='claude-haiku-4-5-20251001'">claude-haiku-4-5</button>
+                <button class="btn btn-ghost btn-sm" @click="settings.anthropic_model='claude-3-5-sonnet-20241022'">claude-3-5-sonnet</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div x-show="settings.parser_backend==='ollama'" style="display:flex; justify-content:space-between;">
-          <span>Ollama URL</span>
-          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#60a5fa;" x-text="settings.ollama_base_url"></code>
+
+        <!-- Test Parse -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:12px;">🧪 Test Parse</div>
+          <div class="form-row">
+            <label>Job description <span style="font-weight:400;color:#475569;">— edit or use the sample</span></label>
+            <textarea x-model="settings.testJd" rows="5" style="font-size:12px; font-family:inherit; resize:vertical;"></textarea>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" @click="runTestParse()" :disabled="settings.testParsing">
+              <span x-show="!settings.testParsing">▶ Run</span>
+              <span x-show="settings.testParsing" class="spinner" style="width:12px;height:12px;margin-right:4px;"></span>
+              <span x-show="settings.testParsing">Parsing…</span>
+            </button>
+            <span x-show="settings.testResult" style="font-size:12px; color:#64748b;"
+                  x-text="settings.testResult ? '['+settings.testResult.backend+' · '+settings.testResult.model+' · '+settings.testResult.elapsed_s+'s]' : ''"></span>
+          </div>
+          <!-- Result -->
+          <div x-show="settings.testResult" style="margin-top:12px;">
+            <!-- Success -->
+            <div x-show="settings.testResult && settings.testResult.success" style="background:#0f1117; border:1px solid #2d3148; border-radius:8px; padding:14px; font-size:12px;">
+              <div style="margin-bottom:8px;">
+                <span style="color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; font-size:10px;">Summary</span>
+                <div style="color:#e2e8f0; margin-top:4px; line-height:1.5;" x-text="settings.testResult.result.parsed_summary"></div>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;">
+                <div>
+                  <span style="color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; font-size:10px;">Compensation</span>
+                  <div style="color:#4ade80; margin-top:4px;" x-text="settings.testResult.result.compensation || 'Not mentioned'"></div>
+                </div>
+                <div>
+                  <span style="color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; font-size:10px;">Min. Experience</span>
+                  <div style="color:#818cf8; margin-top:4px;" x-text="(settings.testResult.result.years_of_experience ?? 'N/A') + (settings.testResult.result.years_of_experience != null ? ' yrs' : '')"></div>
+                </div>
+              </div>
+              <div>
+                <span style="color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; font-size:10px;">Responsibilities</span>
+                <ul style="margin:6px 0 0 0; padding:0; list-style:none;">
+                  <template x-for="r in (settings.testResult.result.responsibilities || [])" :key="r">
+                    <li style="color:#cbd5e1; padding:3px 0; border-bottom:1px solid #1e2235; display:flex; gap:6px;">
+                      <span style="color:#818cf8; flex-shrink:0;">→</span><span x-text="r"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+            <!-- Failure -->
+            <div x-show="settings.testResult && !settings.testResult.success"
+                 style="background:#1a0d0d; border:1px solid #5c2626; border-radius:8px; padding:12px; color:#f87171; font-size:13px;">
+              ✗ Parse returned empty — check that the backend is reachable and the model is pulled.
+            </div>
+          </div>
         </div>
-        <div style="display:flex; justify-content:space-between;">
-          <span>Model</span>
-          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#4ade80;"
-                x-text="settings.parser_backend==='ollama' ? settings.ollama_model : settings.anthropic_model"></code>
+      </div>
+
+      <!-- ── RIGHT COLUMN ────────────────────────────────────── -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+
+        <!-- Notifications -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:14px;">🔔 Notifications</div>
+
+          <!-- Discord -->
+          <div class="form-row">
+            <label>Discord Webhook URL</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" x-model="settings.discord_webhook_url" placeholder="https://discord.com/api/webhooks/…" style="flex:1; font-size:12px;">
+              <button class="btn btn-ghost btn-sm" @click="testWebhook('discord')"
+                      :disabled="!settings.discord_webhook_url || settings.testingDiscord"
+                      title="Send test message">
+                <span x-show="!settings.testingDiscord">🧪</span>
+                <span x-show="settings.testingDiscord" class="spinner" style="width:12px;height:12px;"></span>
+              </button>
+            </div>
+            <div x-show="settings.discordTestMsg" x-text="settings.discordTestMsg"
+                 :style="settings.discordTestMsg && settings.discordTestMsg.startsWith('✓') ? 'color:#4ade80;' : 'color:#f87171;'"
+                 style="font-size:12px; margin-top:4px;"></div>
+          </div>
+
+          <!-- Slack -->
+          <div class="form-row" style="margin-bottom:0;">
+            <label>Slack Webhook URL</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" x-model="settings.slack_webhook_url" placeholder="https://hooks.slack.com/services/…" style="flex:1; font-size:12px;">
+              <button class="btn btn-ghost btn-sm" @click="testWebhook('slack')"
+                      :disabled="!settings.slack_webhook_url || settings.testingSlack"
+                      title="Send test message">
+                <span x-show="!settings.testingSlack">🧪</span>
+                <span x-show="settings.testingSlack" class="spinner" style="width:12px;height:12px;"></span>
+              </button>
+            </div>
+            <div x-show="settings.slackTestMsg" x-text="settings.slackTestMsg"
+                 :style="settings.slackTestMsg && settings.slackTestMsg.startsWith('✓') ? 'color:#4ade80;' : 'color:#f87171;'"
+                 style="font-size:12px; margin-top:4px;"></div>
+          </div>
         </div>
+
+        <!-- Alert Keywords -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:6px;">🎯 Alert Keywords</div>
+          <div class="text-muted text-xs mb-3">Ping you on Discord/Slack only when a job title matches one of these. All jobs are still scraped regardless.</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; min-height:28px;">
+            <template x-for="(kw, i) in settings.alert_keywords" :key="kw">
+              <span style="display:inline-flex; align-items:center; gap:5px; padding:3px 10px 3px 12px; border-radius:20px; font-size:12px; font-weight:500; background:rgba(129,140,248,0.15); border:1px solid rgba(129,140,248,0.3); color:#a5b4fc;">
+                <span x-text="kw"></span>
+                <button @click="settings.alert_keywords.splice(i,1)"
+                        style="background:none; border:none; cursor:pointer; color:inherit; opacity:0.5; padding:0; font-size:13px; line-height:1; transition:opacity 0.15s;"
+                        @mouseenter="$el.style.opacity=1" @mouseleave="$el.style.opacity=0.5">✕</button>
+              </span>
+            </template>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <input type="text" x-model="settings.newAlertKw" placeholder="add keyword…"
+                   style="flex:1; padding:7px 12px; font-size:13px;"
+                   @keydown.enter="if(settings.newAlertKw.trim()){settings.alert_keywords.push(settings.newAlertKw.trim());settings.newAlertKw='';}">
+            <button class="btn btn-ghost btn-sm"
+                    @click="if(settings.newAlertKw.trim()){settings.alert_keywords.push(settings.newAlertKw.trim());settings.newAlertKw='';}">
+              + Add
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrape Schedule -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:6px;">⏱ Scrape Schedule</div>
+          <div class="text-muted text-xs mb-3">How often to check all company job boards between the fixed 08:00 and 20:00 UTC daily scans.</div>
+          <div class="form-row" style="margin-bottom:0;">
+            <label>Interval (hours)</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="number" x-model.number="settings.check_interval_hours" min="1" max="24" style="width:80px;">
+              <span style="font-size:12px; color:#64748b;">+ fixed scans at 08:00 &amp; 20:00 UTC</span>
+            </div>
+            <div class="text-muted text-xs mt-2">⚠ Interval changes take effect after the next deploy.</div>
+          </div>
+        </div>
+
+        <!-- Active Config Summary -->
+        <div class="card" style="font-size:12px;">
+          <div class="section-title" style="margin-bottom:10px;">📋 Active Configuration</div>
+          <div style="display:flex; flex-direction:column; gap:7px; color:#94a3b8;">
+            <div class="flex justify-between"><span>Backend</span><code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#818cf8;" x-text="settings.parser_backend"></code></div>
+            <div x-show="settings.parser_backend==='ollama'" class="flex justify-between"><span>Ollama URL</span><code style="background:#0f1117;padding:2px 7px;border-radius:4px;color:#60a5fa;font-size:11px;" x-text="settings.ollama_base_url"></code></div>
+            <div class="flex justify-between"><span>Model</span><code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#4ade80;" x-text="settings.parser_backend==='ollama' ? settings.ollama_model : settings.anthropic_model"></code></div>
+            <div class="flex justify-between"><span>Notifications</span>
+              <span>
+                <span x-show="settings.discord_webhook_url" style="color:#4ade80;">Discord</span>
+                <span x-show="settings.discord_webhook_url && settings.slack_webhook_url" style="color:#64748b;"> · </span>
+                <span x-show="settings.slack_webhook_url" style="color:#4ade80;">Slack</span>
+                <span x-show="!settings.discord_webhook_url && !settings.slack_webhook_url" style="color:#475569;">None configured</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1837,16 +1982,28 @@ function app() {
 
     // Settings
     settings: {
-      parser_backend:  'ollama',
-      ollama_model:    'llama3.1:8b',
-      ollama_base_url: 'http://host.docker.internal:11434',
-      anthropic_model: 'claude-haiku-4-5-20251001',
+      parser_backend:       'ollama',
+      ollama_model:         'llama3.1:8b',
+      ollama_base_url:      'http://host.docker.internal:11434',
+      anthropic_model:      'claude-haiku-4-5-20251001',
+      discord_webhook_url:  '',
+      slack_webhook_url:    '',
+      alert_keywords:       ['forward deployed', 'forward-deployed', 'fde'],
+      check_interval_hours: 2,
+      newAlertKw:           '',
+      testJd: 'We are looking for a Senior Software Engineer with 5+ years of Python and distributed systems experience. You will design scalable APIs, lead code reviews, and mentor junior engineers. Compensation: $150k–$190k base + equity. Must have strong AWS/GCP, Docker/Kubernetes, and CI/CD experience.',
+      testParsing:    false,
+      testResult:     null,
+      testingDiscord: false,
+      testingSlack:   false,
+      discordTestMsg: '',
+      slackTestMsg:   '',
     },
-    settingsOllamaModels:  [],
+    settingsOllamaModels:   [],
     settingsOllamaReachable: null,
-    settingsLoadingModels: false,
+    settingsLoadingModels:  false,
     settingsSaving: false,
-    settingsMsg: '',
+    settingsMsg:    '',
 
     // FDE Prep roadmap — persisted to localStorage
     roadmap: {},
@@ -2807,12 +2964,15 @@ function app() {
       try {
         const r = await fetch('/settings');
         const d = await r.json();
-        this.settings.parser_backend  = d.parser_backend  || 'ollama';
-        this.settings.ollama_model    = d.ollama_model    || 'llama3.1:8b';
-        this.settings.ollama_base_url = d.ollama_base_url || 'http://host.docker.internal:11434';
-        this.settings.anthropic_model = d.anthropic_model || 'claude-haiku-4-5-20251001';
+        this.settings.parser_backend       = d.parser_backend       || 'ollama';
+        this.settings.ollama_model         = d.ollama_model         || 'llama3.1:8b';
+        this.settings.ollama_base_url      = d.ollama_base_url      || 'http://host.docker.internal:11434';
+        this.settings.anthropic_model      = d.anthropic_model      || 'claude-haiku-4-5-20251001';
+        this.settings.discord_webhook_url  = d.discord_webhook_url  || '';
+        this.settings.slack_webhook_url    = d.slack_webhook_url    || '';
+        this.settings.alert_keywords       = Array.isArray(d.alert_keywords) ? d.alert_keywords : ['forward deployed', 'forward-deployed', 'fde'];
+        this.settings.check_interval_hours = d.check_interval_hours || 2;
         this.settingsMsg = '';
-        // Probe Ollama availability in the background
         this.loadOllamaModels();
       } catch(e) {
         console.error('Failed to load settings:', e);
@@ -2824,7 +2984,7 @@ function app() {
       try {
         const r = await fetch('/settings/ollama-models');
         const d = await r.json();
-        this.settingsOllamaModels   = d.models  || [];
+        this.settingsOllamaModels    = d.models   || [];
         this.settingsOllamaReachable = d.reachable;
       } catch(e) {
         this.settingsOllamaReachable = false;
@@ -2842,10 +3002,14 @@ function app() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            parser_backend:  this.settings.parser_backend,
-            ollama_model:    this.settings.ollama_model,
-            ollama_base_url: this.settings.ollama_base_url,
-            anthropic_model: this.settings.anthropic_model,
+            parser_backend:       this.settings.parser_backend,
+            ollama_model:         this.settings.ollama_model,
+            ollama_base_url:      this.settings.ollama_base_url,
+            anthropic_model:      this.settings.anthropic_model,
+            discord_webhook_url:  this.settings.discord_webhook_url,
+            slack_webhook_url:    this.settings.slack_webhook_url,
+            alert_keywords:       this.settings.alert_keywords,
+            check_interval_hours: this.settings.check_interval_hours,
           }),
         });
         if (!r.ok) {
@@ -2859,6 +3023,49 @@ function app() {
         this.settingsMsg = '✗ ' + e.message;
       } finally {
         this.settingsSaving = false;
+      }
+    },
+
+    async runTestParse() {
+      this.settings.testParsing = true;
+      this.settings.testResult  = null;
+      try {
+        const r = await fetch('/settings/test-parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title:       'Senior Software Engineer',
+            company:     'Acme Corp',
+            description: this.settings.testJd,
+          }),
+        });
+        this.settings.testResult = await r.json();
+      } catch(e) {
+        this.settings.testResult = { success: false };
+      } finally {
+        this.settings.testParsing = false;
+      }
+    },
+
+    async testWebhook(type) {
+      const urlKey  = type === 'discord' ? 'discord_webhook_url' : 'slack_webhook_url';
+      const loadKey = type === 'discord' ? 'testingDiscord'      : 'testingSlack';
+      const msgKey  = type === 'discord' ? 'discordTestMsg'      : 'slackTestMsg';
+      this.settings[loadKey] = true;
+      this.settings[msgKey]  = '';
+      try {
+        const r = await fetch(`/settings/test-${type}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: this.settings[urlKey] }),
+        });
+        const d = await r.json();
+        this.settings[msgKey] = d.ok ? '✓ Message sent!' : '✗ ' + (d.detail || 'Failed');
+        setTimeout(() => this.settings[msgKey] = '', 4000);
+      } catch(e) {
+        this.settings[msgKey] = '✗ ' + e.message;
+      } finally {
+        this.settings[loadKey] = false;
       }
     },
   }
