@@ -1,12 +1,14 @@
 """
 test_parser.py — Unit tests for ai/parser.py.
 
-The Ollama HTTP call is mocked throughout — no real network calls are made.
+Both backends are tested by patching the low-level call functions
+(_call_ollama and _call_anthropic) — no real network calls are made.
 """
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
+import anthropic
 import pytest
 
 from ai.parser import _build_prompt, _extract_json, parse_job
@@ -18,28 +20,22 @@ from ai.parser import _build_prompt, _extract_json, parse_job
 
 class TestExtractJson:
     def test_plain_json(self):
-        raw = '{"key": "value"}'
-        assert _extract_json(raw) == '{"key": "value"}'
+        assert _extract_json('{"key": "value"}') == '{"key": "value"}'
 
     def test_strips_json_fence(self):
-        raw = '```json\n{"key": "value"}\n```'
-        assert _extract_json(raw) == '{"key": "value"}'
+        assert _extract_json('```json\n{"key": "value"}\n```') == '{"key": "value"}'
 
     def test_strips_plain_fence(self):
-        raw = '```\n{"key": "value"}\n```'
-        assert _extract_json(raw) == '{"key": "value"}'
+        assert _extract_json('```\n{"key": "value"}\n```') == '{"key": "value"}'
 
     def test_whitespace_trimmed(self):
-        raw = '  \n  {"key": "value"}  \n  '
-        assert _extract_json(raw).strip() == '{"key": "value"}'
+        assert _extract_json('  \n  {"key": "value"}  \n  ').strip() == '{"key": "value"}'
 
     def test_empty_string(self):
         assert _extract_json("") == ""
 
     def test_leading_prose_skipped(self):
-        """Model sometimes prefixes with a sentence before the JSON."""
-        raw = 'Sure! Here is the JSON:\n{"key": "value"}'
-        assert _extract_json(raw) == '{"key": "value"}'
+        assert _extract_json('Sure! Here is the JSON:\n{"key": "value"}') == '{"key": "value"}'
 
 
 # ---------------------------------------------------------------------------
@@ -48,34 +44,28 @@ class TestExtractJson:
 
 class TestBuildPrompt:
     def test_title_substituted(self):
-        prompt = _build_prompt("Software Engineer", "Acme", "desc")
-        assert "Software Engineer" in prompt
-        assert "TITLE_PLACEHOLDER" not in prompt
+        p = _build_prompt("Software Engineer", "Acme", "desc")
+        assert "Software Engineer" in p and "TITLE_PLACEHOLDER" not in p
 
     def test_company_substituted(self):
-        prompt = _build_prompt("SWE", "Acme Corp", "desc")
-        assert "Acme Corp" in prompt
-        assert "COMPANY_PLACEHOLDER" not in prompt
+        p = _build_prompt("SWE", "Acme Corp", "desc")
+        assert "Acme Corp" in p and "COMPANY_PLACEHOLDER" not in p
 
     def test_description_substituted(self):
-        prompt = _build_prompt("SWE", "Acme", "We are looking for engineers.")
-        assert "We are looking for engineers." in prompt
-        assert "DESCRIPTION_PLACEHOLDER" not in prompt
+        p = _build_prompt("SWE", "Acme", "We are looking for engineers.")
+        assert "We are looking for engineers." in p and "DESCRIPTION_PLACEHOLDER" not in p
 
     def test_description_truncated_at_4000(self):
-        long_desc = "x" * 5000
-        prompt = _build_prompt("SWE", "Acme", long_desc)
-        assert "x" * 4001 not in prompt
+        p = _build_prompt("SWE", "Acme", "x" * 5000)
+        assert "x" * 4001 not in p
 
     def test_curly_braces_in_description_dont_raise(self):
-        """Curly braces in job descriptions must not break formatting."""
-        desc = "Requirements: {Python, Go} or {Java}"
-        prompt = _build_prompt("SWE", "Acme", desc)
-        assert "{Python, Go}" in prompt
+        p = _build_prompt("SWE", "Acme", "Requirements: {Python, Go}")
+        assert "{Python, Go}" in p
 
 
 # ---------------------------------------------------------------------------
-# parse_job — async function with mocked _call_ollama
+# Shared fixtures
 # ---------------------------------------------------------------------------
 
 VALID_RESPONSE = json.dumps({
@@ -85,82 +75,151 @@ VALID_RESPONSE = json.dumps({
     "years_of_experience": 3,
 })
 
-_LONG_DESC = "Description with enough content. " * 10
+_LONG_DESC = "We are looking for an experienced engineer. " * 10
 
+
+# ---------------------------------------------------------------------------
+# parse_job — Ollama backend
+# ---------------------------------------------------------------------------
+
+class TestParseJobOllama:
+    @pytest.mark.asyncio
+    async def test_success(self):
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.return_value = VALID_RESPONSE
+            result = await parse_job("Software Engineer", "Acme", _LONG_DESC)
+
+        assert result["parsed_summary"] == "A great role at a great company."
+        assert result["compensation"] == "$120k–$160k"
+        assert result["years_of_experience"] == 3
+        assert isinstance(result["responsibilities"], list)
+
+    @pytest.mark.asyncio
+    async def test_fenced_json_response(self):
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.return_value = f"```json\n{VALID_RESPONSE}\n```"
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result.get("parsed_summary") is not None
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.return_value = "not valid json {{{"
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.side_effect = aiohttp.ClientConnectorError(
+                connection_key=None, os_error=OSError("Connection refused")
+            )
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_http_error_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.side_effect = ValueError("Ollama HTTP 500: internal error")
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_null_yoe(self):
+        data = {**json.loads(VALID_RESPONSE), "years_of_experience": None}
+        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+             patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
+            mock.return_value = json.dumps(data)
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result["years_of_experience"] is None
+
+
+# ---------------------------------------------------------------------------
+# parse_job — Anthropic backend
+# ---------------------------------------------------------------------------
+
+class TestParseJobAnthropic:
+    @pytest.mark.asyncio
+    async def test_success(self):
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.return_value = VALID_RESPONSE
+            result = await parse_job("Software Engineer", "Acme", _LONG_DESC)
+
+        assert result["parsed_summary"] == "A great role at a great company."
+        assert result["compensation"] == "$120k–$160k"
+        assert result["years_of_experience"] == 3
+
+    @pytest.mark.asyncio
+    async def test_fenced_json_response(self):
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.return_value = f"```json\n{VALID_RESPONSE}\n```"
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result.get("parsed_summary") is not None
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.return_value = "not valid json {{{"
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_exhausted_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.side_effect = anthropic.RateLimitError(
+                "rate limited", response=MagicMock(), body={}
+            )
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_api_exception_returns_empty(self):
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.side_effect = Exception("API error")
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_null_yoe(self):
+        data = {**json.loads(VALID_RESPONSE), "years_of_experience": None}
+        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+             patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
+            mock.return_value = json.dumps(data)
+            result = await parse_job("SWE", "Co", _LONG_DESC)
+
+        assert result["years_of_experience"] is None
+
+
+# ---------------------------------------------------------------------------
+# Backend-agnostic edge cases
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_parse_job_success():
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.return_value = VALID_RESPONSE
-        result = await parse_job(
-            "Software Engineer", "Acme",
-            "We need an engineer with 3+ years. Looking for someone to write code "
-            "and review PRs. Compensation is $120k–$160k.",
-        )
-
-    assert result["parsed_summary"] == "A great role at a great company."
-    assert result["compensation"] == "$120k–$160k"
-    assert result["years_of_experience"] == 3
-    assert isinstance(result["responsibilities"], list)
-
-
-@pytest.mark.asyncio
-async def test_parse_job_fenced_response():
-    fenced = f"```json\n{VALID_RESPONSE}\n```"
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.return_value = fenced
-        result = await parse_job("SWE", "Co", _LONG_DESC)
-
-    assert result.get("parsed_summary") is not None
-
-
-@pytest.mark.asyncio
-async def test_parse_job_invalid_json_returns_empty():
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.return_value = "not valid json {{{"
-        result = await parse_job("SWE", "Co", _LONG_DESC)
-
-    assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_parse_job_empty_description_returns_empty():
+async def test_empty_description_returns_empty():
     result = await parse_job("SWE", "Co", "")
     assert result == {}
 
 
 @pytest.mark.asyncio
-async def test_parse_job_short_description_returns_empty():
+async def test_short_description_returns_empty():
     result = await parse_job("SWE", "Co", "Too short")
     assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_parse_job_api_exception_returns_empty():
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.side_effect = Exception("Unexpected error")
-        result = await parse_job("SWE", "Co", _LONG_DESC)
-
-    assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_parse_job_connection_error_returns_empty():
-    """Ollama not running — ClientConnectorError should return {} gracefully."""
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.side_effect = aiohttp.ClientConnectorError(
-            connection_key=None, os_error=OSError("Connection refused")
-        )
-        result = await parse_job("SWE", "Co", _LONG_DESC)
-
-    assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_parse_job_null_yoe():
-    response_data = {**json.loads(VALID_RESPONSE), "years_of_experience": None}
-    with patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock_call:
-        mock_call.return_value = json.dumps(response_data)
-        result = await parse_job("SWE", "Co", _LONG_DESC)
-
-    assert result["years_of_experience"] is None
