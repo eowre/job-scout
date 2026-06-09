@@ -18,6 +18,12 @@ services:
       DATABASE_URL: "sqlite:////app/data/jobscout.db"
       PYTHONUNBUFFERED: "1"
 
+    # ── Host access for Ollama (local LLM inference) ─────────────────────────
+    # Allows the container to reach Ollama running on the host machine.
+    # Set OLLAMA_BASE_URL=http://host.docker.internal:11434 in your .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     # ── Persistent storage ──────────────────────────────────────────────────
     volumes:
       # SQLite database — survives container restarts and rebuilds
