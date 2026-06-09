@@ -85,7 +85,7 @@ _LONG_DESC = "We are looking for an experienced engineer. " * 10
 class TestParseJobOllama:
     @pytest.mark.asyncio
     async def test_success(self):
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.return_value = VALID_RESPONSE
             result = await parse_job("Software Engineer", "Acme", _LONG_DESC)
@@ -97,7 +97,7 @@ class TestParseJobOllama:
 
     @pytest.mark.asyncio
     async def test_fenced_json_response(self):
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.return_value = f"```json\n{VALID_RESPONSE}\n```"
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -106,7 +106,7 @@ class TestParseJobOllama:
 
     @pytest.mark.asyncio
     async def test_invalid_json_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.return_value = "not valid json {{{"
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -115,7 +115,7 @@ class TestParseJobOllama:
 
     @pytest.mark.asyncio
     async def test_connection_error_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.side_effect = aiohttp.ClientConnectorError(
                 connection_key=None, os_error=OSError("Connection refused")
@@ -126,7 +126,7 @@ class TestParseJobOllama:
 
     @pytest.mark.asyncio
     async def test_http_error_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.side_effect = ValueError("Ollama HTTP 500: internal error")
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -136,7 +136,7 @@ class TestParseJobOllama:
     @pytest.mark.asyncio
     async def test_null_yoe(self):
         data = {**json.loads(VALID_RESPONSE), "years_of_experience": None}
-        with patch("ai.parser._PARSER_BACKEND", "ollama"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "ollama"}), \
              patch("ai.parser._call_ollama", new_callable=AsyncMock) as mock:
             mock.return_value = json.dumps(data)
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -151,7 +151,7 @@ class TestParseJobOllama:
 class TestParseJobAnthropic:
     @pytest.mark.asyncio
     async def test_success(self):
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.return_value = VALID_RESPONSE
             result = await parse_job("Software Engineer", "Acme", _LONG_DESC)
@@ -162,7 +162,7 @@ class TestParseJobAnthropic:
 
     @pytest.mark.asyncio
     async def test_fenced_json_response(self):
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.return_value = f"```json\n{VALID_RESPONSE}\n```"
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -171,7 +171,7 @@ class TestParseJobAnthropic:
 
     @pytest.mark.asyncio
     async def test_invalid_json_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.return_value = "not valid json {{{"
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -180,7 +180,7 @@ class TestParseJobAnthropic:
 
     @pytest.mark.asyncio
     async def test_rate_limit_exhausted_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.side_effect = anthropic.RateLimitError(
                 "rate limited", response=MagicMock(), body={}
@@ -191,7 +191,7 @@ class TestParseJobAnthropic:
 
     @pytest.mark.asyncio
     async def test_api_exception_returns_empty(self):
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.side_effect = Exception("API error")
             result = await parse_job("SWE", "Co", _LONG_DESC)
@@ -201,7 +201,7 @@ class TestParseJobAnthropic:
     @pytest.mark.asyncio
     async def test_null_yoe(self):
         data = {**json.loads(VALID_RESPONSE), "years_of_experience": None}
-        with patch("ai.parser._PARSER_BACKEND", "anthropic"), \
+        with patch.dict("ai.parser._config", {"parser_backend": "anthropic"}), \
              patch("ai.parser._call_anthropic", new_callable=AsyncMock) as mock:
             mock.return_value = json.dumps(data)
             result = await parse_job("SWE", "Co", _LONG_DESC)

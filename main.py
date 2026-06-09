@@ -12,7 +12,7 @@ load_dotenv()
 
 from config import CHECK_INTERVAL_HOURS
 from database import init_db
-from routers import resume, jobs, analysis, scrape, found_jobs, keywords
+from routers import resume, jobs, analysis, scrape, found_jobs, keywords, settings as settings_router
 from services import scraper_service
 from services.scraper_service import start_parse_workers
 
@@ -52,6 +52,13 @@ async def lifespan(app: FastAPI):
     init_db()
     print("✓ Database initialized")
 
+    # Load persisted settings into the live parser config so the last-saved
+    # backend / model is active immediately without any .env dependency.
+    from database import load_settings
+    from ai.parser import update_parser_config
+    update_parser_config(load_settings())
+    print("✓ Parser settings loaded from database")
+
     await start_parse_workers()
 
     asyncio.create_task(_interval_loop())
@@ -77,6 +84,7 @@ app.include_router(analysis.router)
 app.include_router(scrape.router)
 app.include_router(found_jobs.router)
 app.include_router(keywords.router)
+app.include_router(settings_router.router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

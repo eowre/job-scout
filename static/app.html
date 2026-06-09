@@ -379,6 +379,11 @@
       <span class="nav-icon">🗺️</span> FDE Prep
       <span x-text="roadmapProgress" style="margin-left:auto; background:#252836; border-radius:10px; padding:1px 7px; font-size:11px; color:#818cf8;"></span>
     </button>
+    <div style="flex:1;"></div>
+    <hr class="divider" style="margin:8px 0;">
+    <button class="nav-btn" :class="{active: page==='settings'}" @click="page='settings'; loadSettings()">
+      <span class="nav-icon">⚙️</span> Settings
+    </button>
   </div>
 
   <!-- Main -->
@@ -1633,6 +1638,114 @@
 
   </div>
 
+  <!-- SETTINGS PAGE -->
+  <div x-show="page==='settings'" style="display:none; max-width:640px;">
+    <div class="page-title">Settings</div>
+    <div class="page-sub">Configure the AI parser backend and model — changes take effect immediately, no restart needed.</div>
+
+    <!-- AI Backend card -->
+    <div class="card mb-4">
+      <div class="section-title" style="margin-bottom:16px;">AI Parser Backend</div>
+
+      <!-- Backend toggle -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+        <div @click="settings.parser_backend='ollama'"
+             :style="settings.parser_backend==='ollama' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
+             style="border:2px solid #2d3148; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.15s; text-align:center;">
+          <div style="font-size:22px; margin-bottom:6px;">🖥️</div>
+          <div style="font-size:14px; font-weight:600; color:#e2e8f0;">Ollama</div>
+          <div style="font-size:12px; color:#64748b; margin-top:4px;">Local · Free · Private</div>
+        </div>
+        <div @click="settings.parser_backend='anthropic'"
+             :style="settings.parser_backend==='anthropic' ? 'border-color:#818cf8;background:#1e1a3d;' : ''"
+             style="border:2px solid #2d3148; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.15s; text-align:center;">
+          <div style="font-size:22px; margin-bottom:6px;">☁️</div>
+          <div style="font-size:14px; font-weight:600; color:#e2e8f0;">Anthropic</div>
+          <div style="font-size:12px; color:#64748b; margin-top:4px;">Cloud · Requires API key</div>
+        </div>
+      </div>
+
+      <!-- Ollama config -->
+      <div x-show="settings.parser_backend==='ollama'">
+        <div class="form-row">
+          <label>Ollama URL</label>
+          <input type="text" x-model="settings.ollama_base_url" placeholder="http://host.docker.internal:11434">
+        </div>
+        <div class="form-row">
+          <label>Model
+            <span style="font-weight:400; color:#475569; margin-left:6px;">— select installed or type any tag</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" x-model="settings.ollama_model" placeholder="llama3.1:8b" style="flex:1;">
+            <button class="btn btn-ghost btn-sm" @click="loadOllamaModels()" :disabled="settingsLoadingModels"
+                    title="Refresh model list from Ollama">
+              <span x-show="!settingsLoadingModels">↻</span>
+              <span x-show="settingsLoadingModels" class="spinner" style="width:14px;height:14px;"></span>
+            </button>
+          </div>
+          <!-- Installed models dropdown -->
+          <div x-show="settingsOllamaModels.length > 0" style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
+            <template x-for="m in settingsOllamaModels" :key="m">
+              <button class="btn btn-ghost btn-sm"
+                      :style="settings.ollama_model===m ? 'border-color:#818cf8;color:#818cf8;' : ''"
+                      @click="settings.ollama_model=m"
+                      x-text="m"></button>
+            </template>
+          </div>
+          <div x-show="settingsOllamaReachable===false" class="text-warn text-xs mt-2">
+            ⚠ Ollama unreachable at <span x-text="settings.ollama_base_url"></span> — is it running?
+          </div>
+          <div x-show="settingsOllamaReachable===true && settingsOllamaModels.length===0" class="text-muted text-xs mt-2">
+            Ollama is reachable but no models installed yet. Run: <code style="background:#0f1117;padding:1px 6px;border-radius:4px;">ollama pull llama3.1:8b</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Anthropic config -->
+      <div x-show="settings.parser_backend==='anthropic'">
+        <div class="form-row">
+          <label>Model</label>
+          <input type="text" x-model="settings.anthropic_model" placeholder="claude-haiku-4-5-20251001">
+          <div style="margin-top:6px; font-size:12px; color:#64748b;">
+            Common options: <code style="background:#0f1117;padding:1px 6px;border-radius:4px;">claude-haiku-4-5-20251001</code>
+            &nbsp;<code style="background:#0f1117;padding:1px 6px;border-radius:4px;">claude-3-5-sonnet-20241022</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+        <button class="btn btn-primary" @click="saveSettings()" :disabled="settingsSaving">
+          <span x-show="!settingsSaving">Save Settings</span>
+          <span x-show="settingsSaving" class="spinner" style="width:14px;height:14px;"></span>
+        </button>
+        <span x-show="settingsMsg" x-text="settingsMsg"
+              :style="settingsMsg.startsWith('✓') ? 'color:#4ade80;' : 'color:#f87171;'"
+              style="font-size:13px;"></span>
+      </div>
+    </div>
+
+    <!-- Current config summary -->
+    <div class="card" style="font-size:13px;">
+      <div class="section-title" style="margin-bottom:12px;">Active Configuration</div>
+      <div style="display:flex; flex-direction:column; gap:8px; color:#94a3b8;">
+        <div style="display:flex; justify-content:space-between;">
+          <span>Backend</span>
+          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#818cf8;" x-text="settings.parser_backend"></code>
+        </div>
+        <div x-show="settings.parser_backend==='ollama'" style="display:flex; justify-content:space-between;">
+          <span>Ollama URL</span>
+          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#60a5fa;" x-text="settings.ollama_base_url"></code>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>Model</span>
+          <code style="background:#0f1117;padding:2px 8px;border-radius:4px;color:#4ade80;"
+                x-text="settings.parser_backend==='ollama' ? settings.ollama_model : settings.anthropic_model"></code>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" x-show="toast.show" x-text="toast.msg" x-transition style="display:none;"></div>
 
@@ -1721,6 +1834,19 @@ function app() {
 
     // Toast
     toast: { show: false, msg: '' },
+
+    // Settings
+    settings: {
+      parser_backend:  'ollama',
+      ollama_model:    'llama3.1:8b',
+      ollama_base_url: 'http://host.docker.internal:11434',
+      anthropic_model: 'claude-haiku-4-5-20251001',
+    },
+    settingsOllamaModels:  [],
+    settingsOllamaReachable: null,
+    settingsLoadingModels: false,
+    settingsSaving: false,
+    settingsMsg: '',
 
     // FDE Prep roadmap — persisted to localStorage
     roadmap: {},
@@ -2673,7 +2799,68 @@ function app() {
       this.toast.msg = msg;
       this.toast.show = true;
       setTimeout(() => this.toast.show = false, 3500);
-    }
+    },
+
+    // ── Settings ─────────────────────────────────────────────────────────────
+
+    async loadSettings() {
+      try {
+        const r = await fetch('/settings');
+        const d = await r.json();
+        this.settings.parser_backend  = d.parser_backend  || 'ollama';
+        this.settings.ollama_model    = d.ollama_model    || 'llama3.1:8b';
+        this.settings.ollama_base_url = d.ollama_base_url || 'http://host.docker.internal:11434';
+        this.settings.anthropic_model = d.anthropic_model || 'claude-haiku-4-5-20251001';
+        this.settingsMsg = '';
+        // Probe Ollama availability in the background
+        this.loadOllamaModels();
+      } catch(e) {
+        console.error('Failed to load settings:', e);
+      }
+    },
+
+    async loadOllamaModels() {
+      this.settingsLoadingModels = true;
+      try {
+        const r = await fetch('/settings/ollama-models');
+        const d = await r.json();
+        this.settingsOllamaModels   = d.models  || [];
+        this.settingsOllamaReachable = d.reachable;
+      } catch(e) {
+        this.settingsOllamaReachable = false;
+        this.settingsOllamaModels = [];
+      } finally {
+        this.settingsLoadingModels = false;
+      }
+    },
+
+    async saveSettings() {
+      this.settingsSaving = true;
+      this.settingsMsg = '';
+      try {
+        const r = await fetch('/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parser_backend:  this.settings.parser_backend,
+            ollama_model:    this.settings.ollama_model,
+            ollama_base_url: this.settings.ollama_base_url,
+            anthropic_model: this.settings.anthropic_model,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json();
+          this.settingsMsg = '✗ ' + (err.detail || 'Save failed');
+        } else {
+          this.settingsMsg = '✓ Saved — active immediately';
+          setTimeout(() => this.settingsMsg = '', 4000);
+        }
+      } catch(e) {
+        this.settingsMsg = '✗ ' + e.message;
+      } finally {
+        this.settingsSaving = false;
+      }
+    },
   }
 }
 </script>

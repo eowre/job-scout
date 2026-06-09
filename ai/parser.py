@@ -15,66 +15,73 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Backend selection
+# Runtime config
 #
-#   PARSER_BACKEND   "ollama" (default) or "anthropic"
+# Settings are loaded from the database on startup (see database.load_settings
+# + main.py lifespan).  The UI writes changes back via PUT /settings, which
+# calls update_parser_config() here so the new values take effect immediately
+# without a container restart.
 #
-# Switch by setting the env var in your .env file.  The rest of the app is
-# unaffected — parse_job() has the same signature and return value either way.
+# .env / environment variables seed the DB defaults on first boot only.
+# After that the DB is the source of truth.
+#
+# Keys:
+#   parser_backend   "ollama" | "anthropic"
+#   ollama_base_url  e.g. "http://host.docker.internal:11434"
+#   ollama_model     e.g. "llama3.1:8b"
+#   anthropic_model  e.g. "claude-haiku-4-5-20251001"
 # ---------------------------------------------------------------------------
 
-_PARSER_BACKEND = os.getenv("PARSER_BACKEND", "ollama").lower().strip()
+_config: dict = {
+    "parser_backend":  os.getenv("PARSER_BACKEND",    "ollama"),
+    "ollama_base_url": os.getenv("OLLAMA_BASE_URL",   "http://localhost:11434"),
+    "ollama_model":    os.getenv("OLLAMA_MODEL",       "llama3.1:8b"),
+    "anthropic_model": os.getenv("ANTHROPIC_MODEL",    "claude-haiku-4-5-20251001"),
+}
+
+
+def get_parser_config() -> dict:
+    """Return a snapshot of the current parser configuration."""
+    return dict(_config)
+
+
+def update_parser_config(updates: dict) -> None:
+    """
+    Apply a dict of setting updates to the live config.
+    Changes take effect on the next parse_job() call.
+    """
+    _config.update({k: v for k, v in updates.items() if k in _config})
+    logger.info(
+        f"Parser config updated: backend={_config['parser_backend']} "
+        f"model={_config['ollama_model'] if _config['parser_backend'] == 'ollama' else _config['anthropic_model']}"
+    )
+
 
 # ---------------------------------------------------------------------------
-# Ollama configuration  (used when PARSER_BACKEND=ollama)
+# Concurrency — env-var only (not hot-swappable; changing needs a restart)
 #
-#   OLLAMA_BASE_URL     URL of your Ollama instance  (default: http://localhost:11434)
-#   OLLAMA_MODEL        Model tag to use              (default: llama3.1:8b)
-#   OLLAMA_CONCURRENCY  Parallel in-flight requests   (default: 2)
-#   OLLAMA_TIMEOUT_S    Per-request timeout seconds   (default: 120)
-#
-# Recommended models for CPU-only inference (ThinkCentre M900 or similar):
-#   llama3.1:8b    — best all-round; solid JSON output, ~3-5 tok/s on CPU
-#   qwen2.5:7b     — slightly better structured output, same memory footprint
-#   mistral:7b     — fastest, good JSON compliance
-#   gemma2:9b      — strong reasoning, slightly larger (~6 GB)
-#
-# Pull a model:  ollama pull <model-tag>
-# List models:   ollama list
+#   OLLAMA_CONCURRENCY  parallel Ollama requests    (default: 2)
+#   ANTHROPIC_CONCURRENCY  parallel Anthropic calls (default: 3)
 # ---------------------------------------------------------------------------
 
-_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-_OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "llama3.1:8b")
-_OLLAMA_TIMEOUT_S = int(os.getenv("OLLAMA_TIMEOUT_S", "120"))
+_OLLAMA_CONCURRENCY     = int(os.getenv("OLLAMA_CONCURRENCY",     "2"))
+_ANTHROPIC_CONCURRENCY  = int(os.getenv("ANTHROPIC_CONCURRENCY",  "3"))
+_OLLAMA_TIMEOUT_S       = int(os.getenv("OLLAMA_TIMEOUT_S",       "120"))
+
+_ollama_sem    = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
+_anthropic_sem = asyncio.Semaphore(_ANTHROPIC_CONCURRENCY)
 
 # ---------------------------------------------------------------------------
-# Anthropic configuration  (used when PARSER_BACKEND=anthropic)
-#
-#   ANTHROPIC_API_KEY     your Anthropic key  (already in .env)
-#   ANTHROPIC_MODEL       model to use        (default: claude-haiku-4-5-20251001)
-#
-# Rate limiting: Anthropic free/low tier is 50 RPM for Haiku.
-# We target 40 RPM with a sliding-window gate + semaphore.
+# Anthropic rate-limiting (50 RPM cap on free/low tier — target 40 RPM)
 # ---------------------------------------------------------------------------
 
-_ANTHROPIC_MODEL    = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
-_ANTHROPIC_RPM      = 40    # stay 10 under the 50 RPM hard cap
-_ANTHROPIC_RETRIES  = 4     # 1 attempt + 3 retries
-_ANTHROPIC_RETRY_S  = 5     # back-off base: 5 s, 10 s, 20 s
+_ANTHROPIC_RPM     = 40
+_ANTHROPIC_RETRIES = 4
+_ANTHROPIC_RETRY_S = 5
 
-_anthropic_client: anthropic.AsyncAnthropic | None = None
-_anthropic_timestamps: collections.deque            = collections.deque()
-_anthropic_rate_lock                                = asyncio.Lock()
-
-# ---------------------------------------------------------------------------
-# Shared concurrency semaphore
-#
-# For Ollama:    keeps CPU from being overloaded (local inference is the bottleneck)
-# For Anthropic: caps simultaneous in-flight API calls
-# ---------------------------------------------------------------------------
-
-_CONCURRENCY = int(os.getenv("OLLAMA_CONCURRENCY" if _PARSER_BACKEND == "ollama" else "ANTHROPIC_CONCURRENCY", "2"))
-_sem         = asyncio.Semaphore(_CONCURRENCY)
+_anthropic_client:     anthropic.AsyncAnthropic | None = None
+_anthropic_timestamps: collections.deque               = collections.deque()
+_anthropic_rate_lock                                   = asyncio.Lock()
 
 # ---------------------------------------------------------------------------
 # Prompt  (shared by both backends)
@@ -108,7 +115,6 @@ Respond ONLY with this JSON shape (no markdown, no extra text):
 
 
 def _build_prompt(title: str, company: str, description: str) -> str:
-    # String substitution avoids str.format() choking on curly braces in descriptions.
     return (
         _PROMPT
         .replace("TITLE_PLACEHOLDER", title)
@@ -118,13 +124,11 @@ def _build_prompt(title: str, company: str, description: str) -> str:
 
 
 def _extract_json(text: str) -> str:
-    """Strip optional markdown code fences or leading prose the model adds."""
+    """Strip optional markdown fences or leading prose."""
     text = text.strip()
-    # Remove ```json ... ``` or ``` ... ```
     fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)```\s*$", text)
     if fenced:
         return fenced.group(1).strip()
-    # Some models prefix with a sentence before the opening brace — skip it.
     brace = text.find("{")
     if brace > 0:
         text = text[brace:]
@@ -136,17 +140,16 @@ def _extract_json(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _call_ollama(prompt: str, system: str) -> str:
-    """POST to Ollama's OpenAI-compatible endpoint and return the response text."""
-    url     = f"{_OLLAMA_BASE_URL}/v1/chat/completions"
+    cfg     = get_parser_config()
+    url     = cfg["ollama_base_url"].rstrip("/") + "/v1/chat/completions"
     payload = {
-        "model":   _OLLAMA_MODEL,
-        "messages": [
+        "model":           cfg["ollama_model"],
+        "messages":        [
             {"role": "system", "content": system},
             {"role": "user",   "content": prompt},
         ],
         "temperature":     0.1,
         "stream":          False,
-        # Forces JSON output on models that support it (llama3.1, qwen2.5, mistral…)
         "response_format": {"type": "json_object"},
     }
     timeout = aiohttp.ClientTimeout(total=_OLLAMA_TIMEOUT_S)
@@ -177,7 +180,6 @@ def _get_anthropic_client() -> anthropic.AsyncAnthropic:
 
 
 async def _anthropic_throttle() -> None:
-    """Sliding-window rate limiter — blocks until under _ANTHROPIC_RPM."""
     while True:
         async with _anthropic_rate_lock:
             now = time.monotonic()
@@ -191,18 +193,16 @@ async def _anthropic_throttle() -> None:
 
 
 async def _call_anthropic(prompt: str, system: str) -> str:
-    """Call the Anthropic messages API with rate-limiting and retries."""
-    client    = _get_anthropic_client()
-    raw_text  = ""
+    cfg    = get_parser_config()
+    client = _get_anthropic_client()
 
     for attempt in range(_ANTHROPIC_RETRIES):
         retry_wait: float = 0.0
-
-        async with _sem:
+        async with _anthropic_sem:
             await _anthropic_throttle()
             try:
                 response = await client.messages.create(
-                    model=_ANTHROPIC_MODEL,
+                    model=cfg["anthropic_model"],
                     max_tokens=768,
                     system=system,
                     messages=[{"role": "user", "content": prompt}],
@@ -212,28 +212,29 @@ async def _call_anthropic(prompt: str, system: str) -> str:
             except anthropic.RateLimitError:
                 if attempt >= _ANTHROPIC_RETRIES - 1:
                     raise
-                retry_wait = _ANTHROPIC_RETRY_S * (2 ** attempt)   # 5 s, 10 s, 20 s
+                retry_wait = _ANTHROPIC_RETRY_S * (2 ** attempt)
                 logger.warning(
-                    f"Anthropic rate-limited — retry {attempt + 1}/{_ANTHROPIC_RETRIES - 1} "
+                    f"[anthropic] Rate-limited — retry {attempt + 1}/{_ANTHROPIC_RETRIES - 1} "
                     f"in {retry_wait}s"
                 )
 
         if retry_wait:
             await asyncio.sleep(retry_wait)
 
-    return raw_text
+    return ""
 
 
 # ---------------------------------------------------------------------------
-# Public API  (callers are unchanged regardless of backend)
+# Public API
 # ---------------------------------------------------------------------------
 
 async def parse_job(title: str, company: str, raw_description: str) -> dict:
     """
-    Return parsed fields for a job posting.  Never raises — returns {} on any
-    unrecoverable failure.
+    Return parsed fields for a job posting.  Never raises — returns {} on
+    any unrecoverable failure.
 
-    Backend is selected by PARSER_BACKEND env var ("ollama" or "anthropic").
+    Backend is selected by the live config (changeable at runtime via the
+    Settings UI without restarting the container).
 
     Fields returned on success:
         parsed_summary      str
@@ -244,35 +245,35 @@ async def parse_job(title: str, company: str, raw_description: str) -> dict:
     if not raw_description or len(raw_description.strip()) < 50:
         return {}
 
-    prompt   = _build_prompt(title, company, raw_description)
+    prompt  = _build_prompt(title, company, raw_description)
+    backend = get_parser_config()["parser_backend"]
     raw_text = ""
 
     try:
-        async with _sem:
-            if _PARSER_BACKEND == "anthropic":
-                raw_text = await _call_anthropic(prompt, _SYSTEM)
-            else:
+        if backend == "anthropic":
+            raw_text = await _call_anthropic(prompt, _SYSTEM)
+        else:
+            async with _ollama_sem:
                 raw_text = await _call_ollama(prompt, _SYSTEM)
 
         text = _extract_json(raw_text)
         if not text:
-            logger.warning(
-                f"[{_PARSER_BACKEND}] Parser got empty response for '{title}' @ {company}"
-            )
+            logger.warning(f"[{backend}] Empty response for '{title}' @ {company}")
             return {}
 
         return json.loads(text)
 
     except json.JSONDecodeError as exc:
         logger.warning(
-            f"[{_PARSER_BACKEND}] JSON decode error for '{title}' @ {company}: {exc} | "
+            f"[{backend}] JSON decode error for '{title}' @ {company}: {exc} | "
             f"raw={repr(raw_text[:300])}"
         )
         return {}
 
     except aiohttp.ClientConnectorError:
+        cfg = get_parser_config()
         logger.warning(
-            f"[ollama] Cannot reach Ollama at {_OLLAMA_BASE_URL} — "
+            f"[ollama] Cannot reach Ollama at {cfg['ollama_base_url']} — "
             f"is it running?  Try: ollama serve"
         )
         return {}
@@ -285,5 +286,5 @@ async def parse_job(title: str, company: str, raw_description: str) -> dict:
         return {}
 
     except Exception as exc:
-        logger.warning(f"[{_PARSER_BACKEND}] Parser error for '{title}' @ {company}: {exc}")
+        logger.warning(f"[{backend}] Parser error for '{title}' @ {company}: {exc}")
         return {}
