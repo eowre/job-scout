@@ -307,6 +307,12 @@
     ::-webkit-scrollbar-track { background: #0f1117; }
     ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
 
+    /* Settings modal */
+    .settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 32px 24px; backdrop-filter: blur(2px); }
+    .settings-modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 16px; width: 100%; max-width: 1080px; padding: 32px; position: relative; }
+    .settings-modal-close { position: absolute; top: 16px; right: 16px; background: #252836; border: 1px solid #2d3148; border-radius: 8px; color: #64748b; cursor: pointer; font-size: 18px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; }
+    .settings-modal-close:hover { background: #2d3148; color: #e2e8f0; }
+
     /* FDE Prep / Roadmap page */
     .roadmap-progress { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
     .roadmap-progress-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
@@ -381,7 +387,7 @@
     </button>
     <div style="flex:1;"></div>
     <hr class="divider" style="margin:8px 0;">
-    <button class="nav-btn" :class="{active: page==='settings'}" @click="page='settings'; loadSettings()">
+    <button class="nav-btn" :class="{active: settingsOpen}" @click="settingsOpen=true; loadSettings()">
       <span class="nav-icon">⚙️</span> Settings
     </button>
   </div>
@@ -1638,8 +1644,12 @@
 
   </div>
 
-  <!-- SETTINGS PAGE -->
-  <div x-show="page==='settings'" style="display:none;">
+  <!-- SETTINGS MODAL -->
+  <div x-show="settingsOpen" class="settings-overlay" style="display:none;"
+       @click.self="settingsOpen=false"
+       @keydown.escape.window="settingsOpen=false">
+    <div class="settings-modal">
+      <button class="settings-modal-close" @click="settingsOpen=false">✕</button>
     <div class="flex justify-between items-center mb-4">
       <div>
         <div class="page-title">Settings</div>
@@ -1889,6 +1899,7 @@
 
       </div>
     </div>
+    </div>
   </div>
 
   <!-- Toast -->
@@ -2002,6 +2013,7 @@ function app() {
     settingsOllamaModels:   [],
     settingsOllamaReachable: null,
     settingsLoadingModels:  false,
+    settingsOpen:   false,
     settingsSaving: false,
     settingsMsg:    '',
 
