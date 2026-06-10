@@ -103,6 +103,90 @@ def get_analytics(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/by-run")
+def list_jobs_by_run(
+    q: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    yoe_max: Optional[float] = Query(None),
+    has_comp: Optional[bool] = Query(None),
+    added: Optional[bool] = Query(None),
+    runs_limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """Return discovered jobs grouped by the scrape run that found them."""
+    from database import ScrapeRun
+
+    runs = (
+        db.query(ScrapeRun)
+        .order_by(ScrapeRun.started_at.desc())
+        .limit(runs_limit)
+        .all()
+    )
+
+    def _apply_filters(q_jobs):
+        if q:
+            like = f"%{q}%"
+            q_jobs = q_jobs.filter(
+                DiscoveredJob.title.ilike(like) | DiscoveredJob.company.ilike(like)
+            )
+        if location:
+            q_jobs = q_jobs.filter(DiscoveredJob.location.ilike(f"%{location}%"))
+        if yoe_max is not None:
+            q_jobs = q_jobs.filter(
+                (DiscoveredJob.years_of_experience == None) |
+                (DiscoveredJob.years_of_experience <= yoe_max)
+            )
+        if has_comp:
+            q_jobs = q_jobs.filter(
+                DiscoveredJob.compensation.isnot(None),
+                DiscoveredJob.compensation != "",
+                ~DiscoveredJob.compensation.ilike("%null%"),
+                ~DiscoveredJob.compensation.ilike("%none%"),
+            )
+        if added is not None:
+            q_jobs = q_jobs.filter(DiscoveredJob.added_to_pipeline == added)
+        return q_jobs
+
+    groups = []
+    seen_ids: set[int] = set()
+
+    for run in runs:
+        end = run.completed_at or datetime.utcnow()
+        base = db.query(DiscoveredJob).filter(
+            DiscoveredJob.discovered_at >= run.started_at,
+            DiscoveredJob.discovered_at <= end,
+        )
+        jobs = _apply_filters(base).order_by(DiscoveredJob.discovered_at.asc()).all()
+        for j in jobs:
+            seen_ids.add(j.id)
+        groups.append({
+            "run_id": run.id,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "jobs_found": run.jobs_found,
+            "jobs_new": run.jobs_new,
+            "jobs": [_serialize(j) for j in jobs],
+        })
+
+    # Jobs that predate run tracking
+    orphan_base = db.query(DiscoveredJob)
+    if seen_ids:
+        orphan_base = orphan_base.filter(~DiscoveredJob.id.in_(seen_ids))
+    orphans = _apply_filters(orphan_base).order_by(DiscoveredJob.discovered_at.desc()).all()
+    if orphans:
+        groups.append({
+            "run_id": None,
+            "started_at": None,
+            "completed_at": None,
+            "jobs_found": len(orphans),
+            "jobs_new": len(orphans),
+            "jobs": [_serialize(j) for j in orphans],
+        })
+
+    total = sum(len(g["jobs"]) for g in groups)
+    return {"groups": groups, "total": total}
+
+
 @router.get("")
 def list_found_jobs(
     q: Optional[str] = Query(None),

@@ -153,6 +153,14 @@
     .company-search { margin-bottom: 12px; }
 
     /* Found Jobs page */
+    .fj-run-group { margin-bottom: 32px; }
+    .fj-run-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #2d3148; }
+    .fj-run-header-left { display: flex; align-items: center; gap: 10px; }
+    .fj-run-dot { width: 8px; height: 8px; border-radius: 50%; background: #818cf8; flex-shrink: 0; }
+    .fj-run-date { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+    .fj-run-header-right { display: flex; align-items: center; gap: 8px; }
+    .fj-run-stat { font-size: 12px; color: #818cf8; background: #1e2235; border: 1px solid #2d3148; border-radius: 10px; padding: 2px 10px; }
+    .fj-run-stat-dim { font-size: 12px; color: #475569; }
     .fj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
     .fj-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px; cursor: pointer; transition: border-color 0.15s; }
     .fj-card:hover { border-color: #818cf8; }
@@ -528,50 +536,62 @@
             <input type="checkbox" x-model="foundJobs.hasComp" @change="loadFoundJobs()" />
             💰 Has pay info
           </label>
-          <label class="fj-filter-check">
-            <input type="checkbox" x-model="foundJobs.hideOld" @change="loadFoundJobs()" />
-            🕐 Hide jobs older than 7 days
-          </label>
           <span class="text-xs text-muted" x-show="foundJobs.loading">Loading…</span>
           <button class="btn btn-ghost btn-sm" style="margin-left:auto;" @click="resetFoundJobFilters()">↺ Clear filters</button>
         </div>
       </div>
 
-      <!-- Job cards -->
-      <div class="fj-grid" x-show="!foundJobs.loading && foundJobs.jobs.length > 0">
-        <template x-for="job in foundJobs.jobs" :key="job.id">
-          <div class="fj-card" :class="{'fj-card-old': isOldJob(job)}" @click="openFoundJob(job)">
-            <div class="flex justify-between items-start mb-1">
-              <div class="fj-card-title" x-text="job.title"></div>
-              <span class="badge text-xs ml-2" :class="job.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="job.parsed_at ? '✓ Parsed' : '⏳ Raw'" style="flex-shrink:0;"></span>
+      <!-- Grouped by scrape run -->
+      <div x-show="!foundJobs.loading">
+        <template x-for="group in foundJobs.groups" :key="group.run_id ?? 'orphan'">
+          <div x-show="group.jobs.length > 0" class="fj-run-group">
+            <!-- Run header -->
+            <div class="fj-run-header">
+              <div class="fj-run-header-left">
+                <span class="fj-run-dot"></span>
+                <span class="fj-run-date" x-text="formatRunDate(group.started_at)"></span>
+              </div>
+              <div class="fj-run-header-right">
+                <span class="fj-run-stat" x-text="group.jobs.length + ' job' + (group.jobs.length === 1 ? '' : 's')"></span>
+                <span class="fj-run-stat-dim" x-show="group.jobs_new !== group.jobs.length"
+                  x-text="'(' + group.jobs_new + ' new this scan)'"></span>
+              </div>
             </div>
-            <div class="fj-card-company" x-text="job.company"></div>
-            <div class="fj-card-meta">
-              <span x-show="job.location" x-text="'📍 ' + job.location"></span>
-              <span x-show="job.department" x-text="job.department"></span>
-              <span x-show="job.years_of_experience !== null && job.years_of_experience !== undefined" class="yoe-badge" x-text="job.years_of_experience + '+ yrs'"></span>
-              <span x-show="job.posted_date" x-text="job.posted_date ? '📅 ' + new Date(job.posted_date).toLocaleDateString() : ''"></span>
-            </div>
-            <div x-show="job.compensation" class="fj-card-comp" x-text="'💰 ' + job.compensation"></div>
-            <div class="fj-card-summary" x-text="job.parsed_summary || job.raw_description || 'No description available.'"></div>
-            <div class="fj-card-actions" @click.stop>
-              <a :href="job.url" target="_blank" class="btn btn-ghost btn-sm">🔗 View</a>
-              <button class="btn btn-sm" :class="job.added_to_pipeline ? 'btn-ghost' : 'btn-primary'"
-                @click="promoteFoundJob(job)"
-                :disabled="job.added_to_pipeline"
-                x-text="job.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
-              </button>
+            <!-- Cards -->
+            <div class="fj-grid">
+              <template x-for="job in group.jobs" :key="job.id">
+                <div class="fj-card" @click="openFoundJob(job)">
+                  <div class="flex justify-between items-start mb-1">
+                    <div class="fj-card-title" x-text="job.title"></div>
+                    <span class="badge text-xs ml-2" :class="job.parsed_at ? 'badge-parsed' : 'badge-unparsed'" x-text="job.parsed_at ? '✓ Parsed' : '⏳ Raw'" style="flex-shrink:0;"></span>
+                  </div>
+                  <div class="fj-card-company" x-text="job.company"></div>
+                  <div class="fj-card-meta">
+                    <span x-show="job.location" x-text="'📍 ' + job.location"></span>
+                    <span x-show="job.department" x-text="job.department"></span>
+                    <span x-show="job.years_of_experience !== null && job.years_of_experience !== undefined" class="yoe-badge" x-text="job.years_of_experience + '+ yrs'"></span>
+                    <span x-show="job.posted_date" x-text="job.posted_date ? '📅 ' + new Date(job.posted_date).toLocaleDateString() : ''"></span>
+                  </div>
+                  <div x-show="job.compensation" class="fj-card-comp" x-text="'💰 ' + job.compensation"></div>
+                  <div class="fj-card-summary" x-text="job.parsed_summary || job.raw_description || 'No description available.'"></div>
+                  <div class="fj-card-actions" @click.stop>
+                    <a :href="job.url" target="_blank" class="btn btn-ghost btn-sm">🔗 View</a>
+                    <button class="btn btn-sm" :class="job.added_to_pipeline ? 'btn-ghost' : 'btn-primary'"
+                      @click="promoteFoundJob(job)"
+                      :disabled="job.added_to_pipeline"
+                      x-text="job.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
+                    </button>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </template>
-      </div>
-      <div class="text-muted text-sm mt-4" x-show="!foundJobs.loading && foundJobs.jobs.length === 0">
-        No jobs found. Run a scan from the Scout tab to discover jobs.
-      </div>
 
-      <!-- Load more -->
-      <div class="flex justify-center mt-4" x-show="foundJobs.jobs.length < foundJobs.total && !foundJobs.loading">
-        <button class="btn btn-ghost" @click="loadMoreFoundJobs()">Load More</button>
+        <div class="text-muted text-sm mt-4"
+             x-show="foundJobs.groups.every(g => g.jobs.length === 0)">
+          No jobs found. Run a scan from the Scout tab to discover jobs.
+        </div>
       </div>
 
       <!-- Job detail modal -->
@@ -1959,13 +1979,13 @@ function app() {
     // Found Jobs
     foundJobs: {
       jobs: [],
+      groups: [],
       total: 0,
       loading: false,
       q: '',
       location: '',
       yoeMax: '',
       hasComp: false,
-      hideOld: true,
       filterAdded: '',
       skip: 0,
       selected: null,
@@ -2136,7 +2156,16 @@ function app() {
       if (this.foundJobs.yoeMax !== '') p.set('yoe_max', this.foundJobs.yoeMax);
       if (this.foundJobs.hasComp)      p.set('has_comp', 'true');
       if (this.foundJobs.filterAdded !== '') p.set('added', this.foundJobs.filterAdded);
-      p.set('hide_old', this.foundJobs.hideOld ? 'true' : 'false');
+      return p;
+    },
+
+    _foundJobByRunParams() {
+      const p = new URLSearchParams();
+      if (this.foundJobs.q)            p.set('q', this.foundJobs.q);
+      if (this.foundJobs.location)     p.set('location', this.foundJobs.location);
+      if (this.foundJobs.yoeMax !== '') p.set('yoe_max', this.foundJobs.yoeMax);
+      if (this.foundJobs.hasComp)      p.set('has_comp', 'true');
+      if (this.foundJobs.filterAdded !== '') p.set('added', this.foundJobs.filterAdded);
       return p;
     },
 
@@ -2144,10 +2173,12 @@ function app() {
       this.foundJobs.loading = true;
       this.foundJobs.skip = 0;
       try {
-        const res = await fetch('/found-jobs?' + this._foundJobParams(0));
+        const res = await fetch('/found-jobs/by-run?' + this._foundJobByRunParams());
         const data = await res.json();
-        this.foundJobs.jobs = data.jobs;
+        this.foundJobs.groups = data.groups;
         this.foundJobs.total = data.total;
+        // Keep flat list populated for any code that still reads foundJobs.jobs
+        this.foundJobs.jobs = data.groups.flatMap(g => g.jobs);
       } finally {
         this.foundJobs.loading = false;
       }
@@ -2158,9 +2189,15 @@ function app() {
       this.foundJobs.location = '';
       this.foundJobs.yoeMax = '';
       this.foundJobs.hasComp = false;
-      this.foundJobs.hideOld = true;
       this.foundJobs.filterAdded = '';
       this.loadFoundJobs();
+    },
+
+    formatRunDate(iso) {
+      if (!iso) return 'Earlier jobs';
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     },
 
     isOldJob(job) {
@@ -2411,14 +2448,6 @@ function app() {
         c.name.toLowerCase().includes(q) ||
         (c.url || '').toLowerCase().includes(q)
       );
-    },
-
-    async loadMoreFoundJobs() {
-      const next = this.foundJobs.skip + 50;
-      const res = await fetch('/found-jobs?' + this._foundJobParams(next));
-      const data = await res.json();
-      this.foundJobs.jobs.push(...data.jobs);
-      this.foundJobs.skip = next;
     },
 
     openFoundJob(job) {
