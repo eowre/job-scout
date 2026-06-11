@@ -3607,8 +3607,8 @@
   {
     "name": "Modern Treasury",
     "ats": "ashby",
-    "id": "moderntreasury\" target=\"_blank\" rel=\"noreferrer\">Explore roles<span class=\"arrow\">→<",
-    "url": "https://jobs.ashbyhq.com/moderntreasury\" target=\"_blank\" rel=\"noreferrer\">Explore roles<span class=\"arrow\">→<",
+    "id": "moderntreasury\" target=\"_blank\" rel=\"noreferrer\">Explore roles<span class=\"arrow\">\u00e2\u2020\u2019<",
+    "url": "https://jobs.ashbyhq.com/moderntreasury\" target=\"_blank\" rel=\"noreferrer\">Explore roles<span class=\"arrow\">\u00e2\u2020\u2019<",
     "enabled": true
   },
   {
@@ -3894,8 +3894,8 @@
   {
     "name": "Vivun",
     "ats": "ashby",
-    "id": "vivun\" class=\"btn\">See open roles →<",
-    "url": "https://jobs.ashbyhq.com/vivun\" class=\"btn\">See open roles →<",
+    "id": "vivun\" class=\"btn\">See open roles \u00e2\u2020\u2019<",
+    "url": "https://jobs.ashbyhq.com/vivun\" class=\"btn\">See open roles \u00e2\u2020\u2019<",
     "enabled": true
   },
   {
@@ -5681,6 +5681,34 @@
     "ats": "lever",
     "id": "clerky",
     "url": "https://jobs.lever.co/clerky",
+    "enabled": true
+  },
+  {
+    "name": "Deloitte",
+    "ats": "generic",
+    "id": "",
+    "url": "https://apply.deloitte.com/careers/SearchJobs",
+    "enabled": true
+  },
+  {
+    "name": "PwC",
+    "ats": "generic",
+    "id": "",
+    "url": "https://jobs.us.pwc.com/us/en/search-results",
+    "enabled": true
+  },
+  {
+    "name": "EY",
+    "ats": "generic",
+    "id": "",
+    "url": "https://careers.ey.com/ey/search/",
+    "enabled": true
+  },
+  {
+    "name": "KPMG",
+    "ats": "generic",
+    "id": "",
+    "url": "https://jobs.kpmg.us/jobs",
     "enabled": true
   }
 ]
