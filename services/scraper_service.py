@@ -15,6 +15,7 @@ Parse queue:
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -110,6 +111,64 @@ async def start_parse_workers():
     logger.info(f"✓ Parse queue started ({_PARSE_WORKERS} workers)")
 
 
+# ---------------------------------------------------------------------------
+# NAM location filter
+# ---------------------------------------------------------------------------
+
+_RE_NON_NAM = re.compile(
+    r"\b("
+    r"uk|u\.k\.|united kingdom|england|scotland|wales|ireland|northern ireland|"
+    r"germany|france|netherlands|spain|italy|poland|sweden|denmark|norway|"
+    r"finland|switzerland|austria|belgium|portugal|czech|romania|hungary|ukraine|turkey|"
+    r"australia|new zealand|singapore|japan|india|china|south korea|"
+    r"hong kong|taiwan|malaysia|philippines|indonesia|thailand|vietnam|"
+    r"brazil|argentina|colombia|chile|peru|"
+    r"israel|uae|dubai|south africa|kenya|nigeria|"
+    r"europe|emea|apac|asia.pacific"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_NAM = re.compile(
+    r"\b(us\b|usa|u\.s\.a?\.?|united states?|canada|canadian|mexico|mexican|north america)\b",
+    re.IGNORECASE,
+)
+
+_RE_REMOTE = re.compile(
+    r"\b(remote|distributed|work.from.anywhere|wfa|anywhere|worldwide|global)\b",
+    re.IGNORECASE,
+)
+
+
+def _location_filter(location: str) -> str:
+    """
+    Classify a job's location string for the NAM-only filter.
+
+    Returns:
+        'include' — NAM or unknown → save + queue parse
+        'remote'  — remote/global without explicit NAM or non-NAM → save, skip parse
+        'skip'    — explicit non-NAM region → discard entirely
+    """
+    if not location or not location.strip():
+        return "include"  # no location data → assume NAM (safer than discarding)
+
+    loc = location.strip()
+    has_non_nam = bool(_RE_NON_NAM.search(loc))
+    has_nam     = bool(_RE_NAM.search(loc))
+    has_remote  = bool(_RE_REMOTE.search(loc))
+
+    if has_non_nam and not has_nam:
+        return "skip"   # e.g. "London, UK" or "Remote – UK"
+
+    if has_nam:
+        return "include"  # explicit NAM beats any remote flag
+
+    if has_remote:
+        return "remote"  # e.g. bare "Remote" or "Worldwide"
+
+    return "include"
+
+
 def load_companies() -> list:
     with open(COMPANIES_PATH, encoding="utf-8") as f:
         companies = json.load(f)
@@ -145,11 +204,17 @@ async def run_company_scan(company_name: str) -> dict:
         new_count = 0
         try:
             for job in all_jobs:
+                geo = _location_filter(job.location)
+                if geo == "skip":
+                    logger.debug(f"  ~ Non-NAM skipped: {job.title} @ {job.company} [{job.location}]")
+                    continue
+
                 existing = db.query(DiscoveredJob).filter(
                     DiscoveredJob.ats_job_id == job.job_id
                 ).first()
                 if existing:
                     continue
+
                 db_job = DiscoveredJob(
                     ats_job_id=job.job_id,
                     company=job.company,
@@ -164,8 +229,11 @@ async def run_company_scan(company_name: str) -> dict:
                 db.commit()
                 db.refresh(db_job)
                 new_count += 1
-                enqueue_parse(db_job.id, job.title, job.company, job.description)
-                logger.info(f"  + {job.title} @ {job.company}")
+                if geo == "include":
+                    enqueue_parse(db_job.id, job.title, job.company, job.description)
+                else:
+                    logger.debug(f"  ~ Saved (remote, parse skipped): {job.title} @ {job.company}")
+                logger.info(f"  + {job.title} @ {job.company} [{job.location or 'no location'}]")
         finally:
             db.close()
 
@@ -205,6 +273,11 @@ async def run_scan() -> dict:
         fde_new_count = 0
         try:
             for job in all_jobs:
+                geo = _location_filter(job.location)
+                if geo == "skip":
+                    logger.debug(f"  ~ Non-NAM skipped: {job.title} @ {job.company} [{job.location}]")
+                    continue
+
                 existing = db.query(DiscoveredJob).filter(
                     DiscoveredJob.ats_job_id == job.job_id
                 ).first()
@@ -228,8 +301,11 @@ async def run_scan() -> dict:
                 db.commit()
                 db.refresh(db_job)
                 new_count += 1
-                enqueue_parse(db_job.id, job.title, job.company, job.description)
-                logger.info(f"  + {job.title} @ {job.company}")
+                if geo == "include":
+                    enqueue_parse(db_job.id, job.title, job.company, job.description)
+                else:
+                    logger.debug(f"  ~ Saved (remote, parse skipped): {job.title} @ {job.company}")
+                logger.info(f"  + {job.title} @ {job.company} [{job.location or 'no location'}]")
 
                 try:
                     await send_alert(job)
