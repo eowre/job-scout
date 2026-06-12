@@ -3,9 +3,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, Job
+from database import get_db, Job, User
+from routers.auth import get_current_user
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(get_current_user)])
+
+
+def _own_job(db: Session, user: User, job_id: int) -> Job:
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == user.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
 
 VALID_STAGES = ["Saved", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"]
 
@@ -29,8 +37,9 @@ class JobUpdate(BaseModel):
 
 
 @router.post("/")
-def create_job(job: JobCreate, db: Session = Depends(get_db)):
+def create_job(job: JobCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     db_job = Job(
+        user_id=user.id,
         title=job.title,
         company=job.company,
         jd_text=job.jd_text,
@@ -46,17 +55,18 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-def list_jobs(db: Session = Depends(get_db)):
-    jobs = db.query(Job).order_by(Job.updated_at.desc()).all()
+def list_jobs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    jobs = db.query(Job).filter(Job.user_id == user.id).order_by(Job.updated_at.desc()).all()
     return [_serialize(j) for j in jobs]
 
 
 @router.get("/generated/list")
-def list_generated(db: Session = Depends(get_db)):
+def list_generated(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from database import GeneratedResume
     rows = (
         db.query(GeneratedResume, Job)
         .join(Job, Job.id == GeneratedResume.job_id)
+        .filter(Job.user_id == user.id)
         .order_by(GeneratedResume.created_at.desc())
         .all()
     )
@@ -77,7 +87,7 @@ def list_generated(db: Session = Depends(get_db)):
     tracked_job_ids = {g.job_id for g, _ in rows}
     legacy = (
         db.query(Job)
-        .filter(Job.generated_pdf_path.isnot(None), ~Job.id.in_(tracked_job_ids))
+        .filter(Job.user_id == user.id, Job.generated_pdf_path.isnot(None), ~Job.id.in_(tracked_job_ids))
         .order_by(Job.updated_at.desc())
         .all()
     )
@@ -98,18 +108,13 @@ def list_generated(db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}")
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    return _serialize(job)
+def get_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return _serialize(_own_job(db, user, job_id))
 
 
 @router.patch("/{job_id}")
-def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = _own_job(db, user, job_id)
 
     if update.stage and update.stage not in VALID_STAGES:
         raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {VALID_STAGES}")
@@ -123,10 +128,8 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+def delete_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = _own_job(db, user, job_id)
     db.delete(job)
     db.commit()
     return {"ok": True}

@@ -5,7 +5,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, GeneratedResume, Job, Resume
+from database import get_db, GeneratedResume, Job, Resume, User
+from routers.auth import get_current_user
 from ai.scorer import score_fit
 from ai.tailor import tailor_resume, retailor_bullet
 from ai.followup import draft_followup
@@ -50,14 +51,14 @@ class AcceptBulletsRequest(BaseModel):
 
 
 @router.post("/score")
-async def score_job(req: ScoreRequest, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == req.job_id).first()
+async def score_job(req: ScoreRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == req.job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.jd_text:
         raise HTTPException(status_code=400, detail="This job has no description yet. Add one from the pipeline first.")
 
-    resume = db.query(Resume).filter(Resume.id == req.resume_id).first()
+    resume = db.query(Resume).filter(Resume.id == req.resume_id, Resume.user_id == user.id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
 
@@ -72,14 +73,14 @@ async def score_job(req: ScoreRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/tailor")
-async def tailor_job(req: TailorRequest, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == req.job_id).first()
+async def tailor_job(req: TailorRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == req.job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.jd_text:
         raise HTTPException(status_code=400, detail="This job has no description yet. Add one from the pipeline first.")
 
-    resume = db.query(Resume).filter(Resume.id == req.resume_id).first()
+    resume = db.query(Resume).filter(Resume.id == req.resume_id, Resume.user_id == user.id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
 
@@ -104,8 +105,8 @@ async def tailor_job(req: TailorRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/followup")
-async def followup_email(req: FollowupRequest, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == req.job_id).first()
+async def followup_email(req: FollowupRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == req.job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -121,8 +122,8 @@ async def followup_email(req: FollowupRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/retailor-bullet")
-async def retailor_bullet_endpoint(req: RetailorBulletRequest, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == req.job_id).first()
+async def retailor_bullet_endpoint(req: RetailorBulletRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == req.job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -137,8 +138,8 @@ async def retailor_bullet_endpoint(req: RetailorBulletRequest, db: Session = Dep
 
 
 @router.post("/accept-bullets")
-def accept_bullets(req: AcceptBulletsRequest, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == req.job_id).first()
+def accept_bullets(req: AcceptBulletsRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == req.job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -156,8 +157,8 @@ def accept_bullets(req: AcceptBulletsRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/generate-resume/{job_id}")
-async def generate_resume(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def generate_resume(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.resume_id:
@@ -165,7 +166,7 @@ async def generate_resume(job_id: int, db: Session = Depends(get_db)):
     if not job.tailored_bullets:
         raise HTTPException(status_code=400, detail="No bullet decisions saved. Accept or deny bullets first.")
 
-    resume = db.query(Resume).filter(Resume.id == job.resume_id).first()
+    resume = db.query(Resume).filter(Resume.id == job.resume_id, Resume.user_id == user.id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found.")
 
@@ -198,8 +199,8 @@ async def generate_resume(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/download-resume/{job_id}")
-def download_resume(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def download_resume(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.generated_resume_path or not os.path.exists(job.generated_resume_path):
@@ -214,8 +215,8 @@ def download_resume(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/download-resume-pdf/{job_id}")
-def download_resume_pdf(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def download_resume_pdf(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.generated_pdf_path or not os.path.exists(job.generated_pdf_path):
@@ -245,11 +246,11 @@ def _serialize_generated(g: GeneratedResume) -> dict:
 
 
 @router.get("/generated/{job_id}")
-def list_generated_for_job(job_id: int, db: Session = Depends(get_db)):
+def list_generated_for_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """All resumes ever generated for one pipeline job, newest first."""
     rows = (
         db.query(GeneratedResume)
-        .filter(GeneratedResume.job_id == job_id)
+        .filter(GeneratedResume.job_id == job_id, GeneratedResume.user_id == user.id)
         .order_by(GeneratedResume.created_at.desc())
         .all()
     )
@@ -257,8 +258,10 @@ def list_generated_for_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/download-generated/{generated_id}")
-def download_generated(generated_id: int, fmt: str = "docx", db: Session = Depends(get_db)):
-    g = db.query(GeneratedResume).filter(GeneratedResume.id == generated_id).first()
+def download_generated(generated_id: int, fmt: str = "docx", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    g = db.query(GeneratedResume).filter(
+        GeneratedResume.id == generated_id, GeneratedResume.user_id == user.id
+    ).first()
     if not g:
         raise HTTPException(status_code=404, detail="Generated resume not found.")
     path = g.pdf_path if fmt == "pdf" else g.docx_path
@@ -274,8 +277,8 @@ def download_generated(generated_id: int, fmt: str = "docx", db: Session = Depen
 
 
 @router.post("/rescore/{job_id}")
-async def rescore_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def rescore_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if not job.tailored_resume_text:

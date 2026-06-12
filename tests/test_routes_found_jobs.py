@@ -32,6 +32,22 @@ def _make_job(db, **kwargs) -> DiscoveredJob:
     return job
 
 
+def _promote_for_user(db, client, discovered: DiscoveredJob) -> Job:
+    """Put a discovered job in the test user's pipeline (per-user semantics)."""
+    job = Job(
+        user_id=client.user["id"],
+        title=discovered.title,
+        company=discovered.company,
+        jd_text=discovered.raw_description or "",
+        ats_job_id=discovered.ats_job_id,
+        source="scraped",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 # ---------------------------------------------------------------------------
 # GET /found-jobs
 # ---------------------------------------------------------------------------
@@ -68,14 +84,16 @@ class TestListFoundJobs:
         assert r.json()["total"] == 1
 
     def test_filter_added_to_pipeline(self, client, db):
-        _make_job(db, ats_job_id="p1", added_to_pipeline=True)
-        _make_job(db, ats_job_id="p2", added_to_pipeline=False)
+        promoted = _make_job(db, ats_job_id="p1")
+        _promote_for_user(db, client, promoted)
+        _make_job(db, ats_job_id="p2")
         r = client.get("/found-jobs?added=true")
         assert r.json()["total"] == 1
 
     def test_filter_not_added(self, client, db):
-        _make_job(db, ats_job_id="np1", added_to_pipeline=True)
-        _make_job(db, ats_job_id="np2", added_to_pipeline=False)
+        promoted = _make_job(db, ats_job_id="np1")
+        _promote_for_user(db, client, promoted)
+        _make_job(db, ats_job_id="np2")
         r = client.get("/found-jobs?added=false")
         assert r.json()["total"] == 1
 
@@ -129,8 +147,9 @@ class TestAnalytics:
         assert companies["SmallCo"] == 1
 
     def test_in_pipeline_count(self, client, db):
-        _make_job(db, ats_job_id="pip1", added_to_pipeline=True)
-        _make_job(db, ats_job_id="pip2", added_to_pipeline=False)
+        promoted = _make_job(db, ats_job_id="pip1")
+        _promote_for_user(db, client, promoted)
+        _make_job(db, ats_job_id="pip2")
         data = client.get("/found-jobs/analytics").json()
         assert data["in_pipeline"] == 1
 
@@ -164,9 +183,15 @@ class TestPromoteJob:
         assert "pipeline_job_id" in data
         assert data["already_added"] is False
 
-        db.refresh(job)
-        assert job.added_to_pipeline is True
-        assert job.pipeline_job_id == data["pipeline_job_id"]
+        pipeline_job = db.query(Job).filter(Job.id == data["pipeline_job_id"]).first()
+        assert pipeline_job is not None
+        assert pipeline_job.user_id == client.user["id"]
+        assert pipeline_job.ats_job_id == job.ats_job_id
+
+        # The listing reflects the promotion for this user
+        listed = client.get(f"/found-jobs/{job.id}").json()
+        assert listed["added_to_pipeline"] is True
+        assert listed["pipeline_job_id"] == data["pipeline_job_id"]
 
     def test_promote_twice_returns_already_added(self, client, db):
         job = _make_job(db, ats_job_id="promo2")
@@ -196,7 +221,8 @@ class TestDeleteFoundJob:
         assert r2.status_code == 404
 
     def test_cannot_delete_pipeline_job(self, client, db):
-        job = _make_job(db, ats_job_id="del2", added_to_pipeline=True)
+        job = _make_job(db, ats_job_id="del2")
+        _promote_for_user(db, client, job)
         r = client.delete(f"/found-jobs/{job.id}")
         assert r.status_code == 409
 

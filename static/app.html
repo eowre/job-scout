@@ -398,6 +398,41 @@
     <button class="nav-btn" :class="{active: settingsOpen}" @click="settingsOpen=true; loadSettings()">
       <span class="nav-icon">⚙️</span> Settings
     </button>
+    <div x-show="user" style="display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;color:#94a3b8;">
+      <span style="width:24px;height:24px;border-radius:50%;background:#252836;display:flex;align-items:center;justify-content:center;color:#818cf8;font-weight:700;"
+            x-text="(user?.username || '?')[0].toUpperCase()"></span>
+      <span x-text="user?.username" style="flex:1;overflow:hidden;text-overflow:ellipsis;"></span>
+      <button @click="logout()" title="Log out" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">⏻</button>
+    </div>
+  </div>
+
+  <!-- LOGIN OVERLAY -->
+  <div x-show="authChecked && !user"
+       style="position:fixed;inset:0;background:#0f1117;z-index:500;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:16px;padding:32px;max-width:380px;width:100%;">
+      <div class="logo" style="margin-bottom:6px;">Job<span>Scout</span></div>
+      <p class="text-sm text-muted mb-4" x-text="authForm.mode === 'login' ? 'Log in to your account' : 'Create an account'"></p>
+      <form @submit.prevent="submitAuth()">
+        <div class="form-row">
+          <label>Username</label>
+          <input x-model="authForm.username" autocomplete="username" required minlength="2" />
+        </div>
+        <div class="form-row">
+          <label>Password</label>
+          <input type="password" x-model="authForm.password" :autocomplete="authForm.mode === 'login' ? 'current-password' : 'new-password'" required minlength="8" />
+        </div>
+        <p class="text-sm mb-3" x-show="authForm.error" style="color:#f87171;" x-text="authForm.error"></p>
+        <button type="submit" class="btn btn-primary" style="width:100%;" :disabled="authForm.busy">
+          <span x-show="!authForm.busy" x-text="authForm.mode === 'login' ? 'Log In' : 'Create Account'"></span>
+          <span x-show="authForm.busy" class="loading"><span class="spinner"></span></span>
+        </button>
+      </form>
+      <p class="text-sm text-muted mt-3" style="text-align:center;">
+        <a href="#" @click.prevent="authForm.mode = authForm.mode === 'login' ? 'register' : 'login'; authForm.error=''"
+           style="color:#818cf8;"
+           x-text="authForm.mode === 'login' ? 'New here? Create an account' : 'Already have an account? Log in'"></a>
+      </p>
+    </div>
   </div>
 
   <!-- Main -->
@@ -2048,6 +2083,11 @@ function app() {
     openBreakdowns: {},
     gapContexts: {},
 
+    // Auth
+    user: null,
+    authChecked: false,
+    authForm: { mode: 'login', username: '', password: '', error: '', busy: false },
+
     // Pipeline
     selectedJob: null,
     selectedJobResumes: [],
@@ -2193,10 +2233,49 @@ function app() {
         if (saved) this.roadmap = JSON.parse(saved);
       } catch(e) {}
 
+      try {
+        const res = await fetch('/auth/me');
+        if (res.ok) this.user = await res.json();
+      } catch(e) {}
+      this.authChecked = true;
+      if (!this.user) return;   // login overlay takes over
+
       await this.loadResumes();
       await this.loadJobs();
       await this.loadScout();
       await this.loadFoundJobs();
+    },
+
+    async submitAuth() {
+      this.authForm.busy = true;
+      this.authForm.error = '';
+      try {
+        const res = await fetch(`/auth/${this.authForm.mode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: this.authForm.username, password: this.authForm.password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          this.authForm.error = data.detail?.[0]?.msg || data.detail || 'Something went wrong.';
+          return;
+        }
+        this.user = data;
+        this.authForm.password = '';
+        await this.loadResumes();
+        await this.loadJobs();
+        await this.loadScout();
+        await this.loadFoundJobs();
+      } catch (e) {
+        this.authForm.error = e.message;
+      } finally {
+        this.authForm.busy = false;
+      }
+    },
+
+    async logout() {
+      await fetch('/auth/logout', { method: 'POST' });
+      location.reload();
     },
 
     // ── Scout ─────────────────────────────────────────────────────────────────

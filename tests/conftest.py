@@ -49,11 +49,17 @@ def db():
 
 @pytest.fixture
 def client(db):
+    """Authenticated test client — registers a test account so user-scoped
+    endpoints work. The session cookie persists on the client; the registered
+    user is exposed as `client.user` ({"id", "username", ...})."""
     def override_get_db():
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
+        r = c.post("/auth/register", json={"username": "testuser", "password": "testpassword1"})
+        assert r.status_code == 200, r.text
+        c.user = r.json()
         yield c
     app.dependency_overrides.clear()
 

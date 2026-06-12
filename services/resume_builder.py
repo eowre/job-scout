@@ -89,6 +89,7 @@ def record_generation(db, job: Job, docx_path: str, pdf_path: str | None) -> Gen
     job.generated_resume_path = docx_path
     job.generated_pdf_path = pdf_path
     entry = GeneratedResume(
+        user_id=job.user_id,
         job_id=job.id,
         resume_id=job.resume_id,
         docx_path=docx_path,
