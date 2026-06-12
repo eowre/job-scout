@@ -28,6 +28,7 @@ _ALLOWED_KEYS = {
     "discord_webhook_url", "slack_webhook_url",
     "alert_keywords",       # stored as JSON string
     "check_interval_hours",
+    "auto_tailor_min_score",
 }
 
 
@@ -40,6 +41,7 @@ class SettingsUpdate(BaseModel):
     slack_webhook_url:    str | None = None
     alert_keywords:       list[str] | None = None   # list in, stored as JSON
     check_interval_hours: int | None = None
+    auto_tailor_min_score: int | None = None
 
 
 @router.get("")
@@ -54,6 +56,10 @@ def get_settings():
         s["check_interval_hours"] = int(s.get("check_interval_hours", 2))
     except Exception:
         s["check_interval_hours"] = 2
+    try:
+        s["auto_tailor_min_score"] = int(s.get("auto_tailor_min_score", 70))
+    except Exception:
+        s["auto_tailor_min_score"] = 70
     return s
 
 
@@ -75,6 +81,8 @@ def put_settings(body: SettingsUpdate):
         # Serialise interval
         if key == "check_interval_hours":
             value = str(int(value))
+        if key == "auto_tailor_min_score":
+            value = str(max(0, min(100, int(value))))
         updates[key] = value
 
     if not updates:

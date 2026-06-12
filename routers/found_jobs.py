@@ -8,7 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db, DiscoveredJob, Job
+from pydantic import BaseModel
+
+from database import get_db, DiscoveredJob, Job, Resume
+from services import auto_analyze
 
 router = APIRouter(prefix="/found-jobs", tags=["found-jobs"])
 
@@ -252,31 +255,41 @@ def promote_to_pipeline(job_id: int, db: Session = Depends(get_db)):
     if discovered.added_to_pipeline and discovered.pipeline_job_id:
         return {"pipeline_job_id": discovered.pipeline_job_id, "already_added": True}
 
-    jd_text = discovered.parsed_summary or discovered.raw_description or ""
-    pipeline_job = Job(
-        title=discovered.title,
-        company=discovered.company,
-        jd_text=jd_text,
-        stage="Saved",
-        source="scraped",
-        ats_job_id=discovered.ats_job_id,
-        job_url=discovered.url,
-        contact_info=json.dumps({
-            k: v for k, v in {
-                "location": discovered.location,
-                "department": discovered.department,
-            }.items() if v
-        }),
-    )
-    db.add(pipeline_job)
-    db.commit()
-    db.refresh(pipeline_job)
-
-    discovered.added_to_pipeline = True
-    discovered.pipeline_job_id = pipeline_job.id
-    db.commit()
-
+    pipeline_job = auto_analyze.promote_discovered(db, discovered)
     return {"pipeline_job_id": pipeline_job.id, "already_added": False}
+
+
+class AutoAnalyzeRequest(BaseModel):
+    resume_id: int
+
+
+@router.post("/{job_id}/auto-analyze")
+async def start_auto_analyze(job_id: int, req: AutoAnalyzeRequest, db: Session = Depends(get_db)):
+    """Promote → score → (if score clears threshold) tailor + generate resume.
+
+    Runs in the background; poll GET /found-jobs/{id}/auto-analyze for progress.
+    """
+    discovered = db.query(DiscoveredJob).filter(DiscoveredJob.id == job_id).first()
+    if not discovered:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not (discovered.parsed_summary or discovered.raw_description):
+        raise HTTPException(status_code=400, detail="This job has no description to analyze.")
+    resume = db.query(Resume).filter(Resume.id == req.resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    if auto_analyze.is_running(job_id):
+        raise HTTPException(status_code=409, detail="Analysis already running for this job.")
+
+    asyncio.create_task(auto_analyze.run_auto_analyze(job_id, req.resume_id))
+    return {"status": "started"}
+
+
+@router.get("/{job_id}/auto-analyze")
+def auto_analyze_status(job_id: int):
+    status = auto_analyze.get_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="No analysis run for this job.")
+    return status
 
 
 @router.post("/{job_id}/reparse")

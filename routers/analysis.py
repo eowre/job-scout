@@ -1,18 +1,16 @@
 import json
 import os
-import subprocess
-import tempfile
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, Job, Resume
+from database import get_db, GeneratedResume, Job, Resume
 from ai.scorer import score_fit
 from ai.tailor import tailor_resume, retailor_bullet
 from ai.followup import draft_followup
 from ai.resume_gen import structure_resume
-from ai.pdf_gen import generate_pdf
+from services.resume_builder import build_resume_files, flatten_resume, record_generation
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -180,44 +178,16 @@ async def generate_resume(job_id: int, db: Session = Depends(get_db)):
 
     structured = await structure_resume(resume.raw_text, accepted, denied)
 
-    job.tailored_resume_text = _flatten_resume(structured)
+    job.tailored_resume_text = flatten_resume(structured)
     db.commit()
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as jf:
-        json.dump(structured, jf)
-        json_path = jf.name
-
-    generated_dir = os.path.join(os.path.dirname(__file__), "..", "generated")
-    os.makedirs(generated_dir, exist_ok=True)
-    safe_title = "".join(c for c in f"{job.company}_{job.title}" if c.isalnum() or c in " _-")[:50].strip()
-    filename = f"job{job.id}_{safe_title.replace(' ', '_')}_tailored.docx"
-    docx_path = os.path.abspath(os.path.join(generated_dir, filename))
-
-    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "generate_resume.js"))
-
     try:
-        result = subprocess.run(
-            ["node", script_path, json_path, docx_path],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Resume generation failed: {result.stderr}")
-    finally:
-        os.unlink(json_path)
+        docx_path, pdf_path = build_resume_files(job, structured)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if not os.path.exists(docx_path):
-        raise HTTPException(status_code=500, detail="Resume file was not created.")
-
-    pdf_filename = filename.replace(".docx", ".pdf")
-    pdf_path = os.path.join(generated_dir, pdf_filename)
-    try:
-        generate_pdf(structured, pdf_path)
-        job.generated_pdf_path = pdf_path
-    except Exception as e:
-        print(f"PDF generation warning: {e}")
-
-    job.generated_resume_path = docx_path
-    db.commit()
+    record_generation(db, job, docx_path, pdf_path)
+    filename = os.path.basename(docx_path)
 
     return FileResponse(
         path=docx_path,
@@ -259,6 +229,50 @@ def download_resume_pdf(job_id: int, db: Session = Depends(get_db)):
     )
 
 
+_DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _serialize_generated(g: GeneratedResume) -> dict:
+    return {
+        "id": g.id,
+        "job_id": g.job_id,
+        "fit_score": g.fit_score,
+        "created_at": g.created_at.isoformat() if g.created_at else None,
+        "docx_url": f"/analysis/download-generated/{g.id}?fmt=docx" if g.docx_path else None,
+        "pdf_url": f"/analysis/download-generated/{g.id}?fmt=pdf" if g.pdf_path else None,
+        "filename": os.path.basename(g.docx_path or g.pdf_path or ""),
+    }
+
+
+@router.get("/generated/{job_id}")
+def list_generated_for_job(job_id: int, db: Session = Depends(get_db)):
+    """All resumes ever generated for one pipeline job, newest first."""
+    rows = (
+        db.query(GeneratedResume)
+        .filter(GeneratedResume.job_id == job_id)
+        .order_by(GeneratedResume.created_at.desc())
+        .all()
+    )
+    return [_serialize_generated(g) for g in rows]
+
+
+@router.get("/download-generated/{generated_id}")
+def download_generated(generated_id: int, fmt: str = "docx", db: Session = Depends(get_db)):
+    g = db.query(GeneratedResume).filter(GeneratedResume.id == generated_id).first()
+    if not g:
+        raise HTTPException(status_code=404, detail="Generated resume not found.")
+    path = g.pdf_path if fmt == "pdf" else g.docx_path
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"No {fmt} file on disk for this entry.")
+    filename = os.path.basename(path)
+    return FileResponse(
+        path=path,
+        media_type="application/pdf" if fmt == "pdf" else _DOCX_MEDIA,
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/rescore/{job_id}")
 async def rescore_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -289,28 +303,3 @@ async def rescore_job(job_id: int, db: Session = Depends(get_db)):
     }
 
 
-def _flatten_resume(structured: dict) -> str:
-    lines = []
-    if structured.get("name"):
-        lines.append(structured["name"])
-    if structured.get("contact"):
-        lines.append(structured["contact"])
-    if structured.get("summary"):
-        lines.append("\nSUMMARY\n" + structured["summary"])
-    for job in structured.get("experience", []):
-        lines.append(f"\n{job.get('title', '')} at {job.get('company', '')} ({job.get('dates', '')})")
-        for b in job.get("bullets", []):
-            lines.append(f"- {b}")
-    for edu in structured.get("education", []):
-        lines.append(f"\n{edu.get('degree', '')} - {edu.get('school', '')} ({edu.get('dates', '')})")
-        if edu.get("notes"):
-            lines.append(edu["notes"])
-    if structured.get("skills"):
-        lines.append("\nSKILLS")
-        for s in structured["skills"]:
-            lines.append(f"- {s}")
-    if structured.get("extras"):
-        lines.append("\nADDITIONAL")
-        for e in structured["extras"]:
-            lines.append(f"- {e}")
-    return "\n".join(lines)

@@ -1,10 +1,4 @@
-import anthropic
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+from ai.client import complete
 
 STAGE_CONTEXT = {
     "Applied": "The candidate has just applied and wants to send a brief follow-up to confirm receipt and express enthusiasm.",
@@ -54,10 +48,4 @@ async def draft_followup(title: str, company: str, stage: str, jd_text: str, not
         notes=notes or "None provided."
     )
 
-    message = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return message.content[0].text.strip()
+    return await complete(prompt, max_tokens=512, model="claude-haiku-4-5-20251001")
