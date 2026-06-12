@@ -12,7 +12,7 @@ load_dotenv()
 
 from config import CHECK_INTERVAL_HOURS
 from database import init_db
-from routers import resume, jobs, analysis, scrape, found_jobs, keywords, settings as settings_router
+from routers import auth, resume, jobs, analysis, scrape, found_jobs, keywords, settings as settings_router
 from services import scraper_service
 from services.scraper_service import start_parse_workers
 
@@ -78,6 +78,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(resume.router)
 app.include_router(jobs.router)
 app.include_router(analysis.router)

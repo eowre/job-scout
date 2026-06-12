@@ -14,10 +14,30 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserSession(Base):
+    """Login session — token is stored in an HttpOnly cookie."""
+    __tablename__ = "user_sessions"
+
+    token = Column(String, primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+
+
 class Resume(Base):
     __tablename__ = "resumes"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     filename = Column(String, nullable=False)
     raw_text = Column(Text, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
@@ -27,6 +47,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     title = Column(String, nullable=False)
     company = Column(String, default="")
     jd_text = Column(Text, nullable=False, default="")
@@ -82,6 +103,7 @@ class GeneratedResume(Base):
     __tablename__ = "generated_resumes"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     job_id = Column(Integer, nullable=False, index=True)
     resume_id = Column(Integer, nullable=True)   # source (master) resume
     docx_path = Column(String, nullable=True)
@@ -205,9 +227,24 @@ def _migrate():
         # Table will be created by create_all above; nothing to migrate
         pass
 
+    if "resumes" in tables:
+        existing = {col["name"] for col in inspector.get_columns("resumes")}
+        if "user_id" not in existing:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE resumes ADD COLUMN user_id INTEGER"))
+                conn.commit()
+
+    if "generated_resumes" in tables:
+        existing = {col["name"] for col in inspector.get_columns("generated_resumes")}
+        if "user_id" not in existing:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE generated_resumes ADD COLUMN user_id INTEGER"))
+                conn.commit()
+
     if "jobs" in tables:
         existing = {col["name"] for col in inspector.get_columns("jobs")}
         migrations = {
+            "user_id":               "ALTER TABLE jobs ADD COLUMN user_id INTEGER",
             "tailored_resume_text":  "ALTER TABLE jobs ADD COLUMN tailored_resume_text TEXT",
             "generated_resume_path": "ALTER TABLE jobs ADD COLUMN generated_resume_path TEXT",
             "generated_pdf_path":    "ALTER TABLE jobs ADD COLUMN generated_pdf_path TEXT",

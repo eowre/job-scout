@@ -10,13 +10,26 @@ from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
 
-from database import get_db, DiscoveredJob, Job, Resume
+from database import get_db, DiscoveredJob, Job, Resume, User
+from routers.auth import get_current_user, get_optional_user
 from services import auto_analyze
 
 router = APIRouter(prefix="/found-jobs", tags=["found-jobs"])
 
 
-def _serialize(j: DiscoveredJob) -> dict:
+def _promotion_map(db: Session, user: Optional[User]) -> dict[str, int]:
+    """The user's promoted jobs: ats_job_id -> pipeline job id."""
+    if not user:
+        return {}
+    rows = (
+        db.query(Job.ats_job_id, Job.id)
+        .filter(Job.user_id == user.id, Job.ats_job_id.isnot(None))
+        .all()
+    )
+    return dict(rows)
+
+
+def _serialize(j: DiscoveredJob, promoted: dict[str, int] | None = None) -> dict:
     responsibilities = []
     if j.responsibilities:
         try:
@@ -39,15 +52,16 @@ def _serialize(j: DiscoveredJob) -> dict:
         "parsed_at": j.parsed_at.isoformat() if j.parsed_at else None,
         "posted_date": j.posted_date.isoformat() if j.posted_date else None,
         "scouted_at": j.discovered_at.isoformat() if j.discovered_at else None,
-        "added_to_pipeline": j.added_to_pipeline,
-        "pipeline_job_id": j.pipeline_job_id,
+        "added_to_pipeline": j.ats_job_id in promoted if promoted is not None else False,
+        "pipeline_job_id": (promoted or {}).get(j.ats_job_id),
     }
 
 
 @router.get("/analytics")
-def get_analytics(db: Session = Depends(get_db)):
+def get_analytics(db: Session = Depends(get_db), user: Optional[User] = Depends(get_optional_user)):
     """Summary stats and breakdowns for all discovered jobs."""
     jobs = db.query(DiscoveredJob).all()
+    promoted = _promotion_map(db, user)
 
     total = len(jobs)
     parsed = sum(1 for j in jobs if j.parsed_at)
@@ -89,8 +103,8 @@ def get_analytics(db: Session = Depends(get_db)):
     # Compensation
     jobs_with_comp = sum(1 for j in jobs if j.compensation and j.compensation.lower() not in ("null", "none", ""))
 
-    # Pipeline rate
-    in_pipeline = sum(1 for j in jobs if j.added_to_pipeline)
+    # Pipeline rate (per current user)
+    in_pipeline = sum(1 for j in jobs if j.ats_job_id in promoted)
 
     return {
         "total": total,
@@ -115,9 +129,12 @@ def list_jobs_by_run(
     added: Optional[bool] = Query(None),
     runs_limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """Return discovered jobs grouped by the scrape run that found them."""
     from database import ScrapeRun
+
+    promoted = _promotion_map(db, user)
 
     runs = (
         db.query(ScrapeRun)
@@ -147,7 +164,11 @@ def list_jobs_by_run(
                 ~DiscoveredJob.compensation.ilike("%none%"),
             )
         if added is not None:
-            q_jobs = q_jobs.filter(DiscoveredJob.added_to_pipeline == added)
+            ids = list(promoted.keys()) or [""]
+            if added:
+                q_jobs = q_jobs.filter(DiscoveredJob.ats_job_id.in_(ids))
+            else:
+                q_jobs = q_jobs.filter(~DiscoveredJob.ats_job_id.in_(ids))
         return q_jobs
 
     groups = []
@@ -168,7 +189,7 @@ def list_jobs_by_run(
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             "jobs_found": run.jobs_found,
             "jobs_new": run.jobs_new,
-            "jobs": [_serialize(j) for j in jobs],
+            "jobs": [_serialize(j, promoted) for j in jobs],
         })
 
     # Jobs that predate run tracking
@@ -183,7 +204,7 @@ def list_jobs_by_run(
             "completed_at": None,
             "jobs_found": len(orphans),
             "jobs_new": len(orphans),
-            "jobs": [_serialize(j) for j in orphans],
+            "jobs": [_serialize(j, promoted) for j in orphans],
         })
 
     total = sum(len(g["jobs"]) for g in groups)
@@ -202,7 +223,9 @@ def list_found_jobs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
 ):
+    promoted = _promotion_map(db, user)
     query = db.query(DiscoveredJob)
 
     if q:
@@ -231,31 +254,41 @@ def list_found_jobs(
         cutoff = datetime.utcnow() - timedelta(days=7)
         query = query.filter(DiscoveredJob.discovered_at >= cutoff)
     if added is not None:
-        query = query.filter(DiscoveredJob.added_to_pipeline == added)
+        ids = list(promoted.keys()) or [""]
+        if added:
+            query = query.filter(DiscoveredJob.ats_job_id.in_(ids))
+        else:
+            query = query.filter(~DiscoveredJob.ats_job_id.in_(ids))
 
     total = query.count()
     jobs = query.order_by(DiscoveredJob.discovered_at.desc()).offset(skip).limit(limit).all()
-    return {"total": total, "jobs": [_serialize(j) for j in jobs]}
+    return {"total": total, "jobs": [_serialize(j, promoted) for j in jobs]}
 
 
 @router.get("/{job_id}")
-def get_found_job(job_id: int, db: Session = Depends(get_db)):
+def get_found_job(job_id: int, db: Session = Depends(get_db), user: Optional[User] = Depends(get_optional_user)):
     job = db.query(DiscoveredJob).filter(DiscoveredJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return _serialize(job)
+    return _serialize(job, _promotion_map(db, user))
 
 
 @router.post("/{job_id}/promote")
-def promote_to_pipeline(job_id: int, db: Session = Depends(get_db)):
-    """Copy a discovered job into the pipeline Jobs table."""
+def promote_to_pipeline(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Copy a discovered job into the current user's pipeline."""
     discovered = db.query(DiscoveredJob).filter(DiscoveredJob.id == job_id).first()
     if not discovered:
         raise HTTPException(status_code=404, detail="Job not found")
-    if discovered.added_to_pipeline and discovered.pipeline_job_id:
-        return {"pipeline_job_id": discovered.pipeline_job_id, "already_added": True}
 
-    pipeline_job = auto_analyze.promote_discovered(db, discovered)
+    already = (
+        db.query(Job)
+        .filter(Job.user_id == user.id, Job.ats_job_id == discovered.ats_job_id)
+        .first()
+    )
+    if already:
+        return {"pipeline_job_id": already.id, "already_added": True}
+
+    pipeline_job = auto_analyze.promote_discovered(db, discovered, user.id)
     return {"pipeline_job_id": pipeline_job.id, "already_added": False}
 
 
@@ -264,7 +297,7 @@ class AutoAnalyzeRequest(BaseModel):
 
 
 @router.post("/{job_id}/auto-analyze")
-async def start_auto_analyze(job_id: int, req: AutoAnalyzeRequest, db: Session = Depends(get_db)):
+async def start_auto_analyze(job_id: int, req: AutoAnalyzeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Promote → score → (if score clears threshold) tailor + generate resume.
 
     Runs in the background; poll GET /found-jobs/{id}/auto-analyze for progress.
@@ -274,19 +307,19 @@ async def start_auto_analyze(job_id: int, req: AutoAnalyzeRequest, db: Session =
         raise HTTPException(status_code=404, detail="Job not found")
     if not (discovered.parsed_summary or discovered.raw_description):
         raise HTTPException(status_code=400, detail="This job has no description to analyze.")
-    resume = db.query(Resume).filter(Resume.id == req.resume_id).first()
+    resume = db.query(Resume).filter(Resume.id == req.resume_id, Resume.user_id == user.id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-    if auto_analyze.is_running(job_id):
+    if auto_analyze.is_running(user.id, job_id):
         raise HTTPException(status_code=409, detail="Analysis already running for this job.")
 
-    asyncio.create_task(auto_analyze.run_auto_analyze(job_id, req.resume_id))
+    asyncio.create_task(auto_analyze.run_auto_analyze(job_id, req.resume_id, user.id))
     return {"status": "started"}
 
 
 @router.get("/{job_id}/auto-analyze")
-def auto_analyze_status(job_id: int):
-    status = auto_analyze.get_status(job_id)
+def auto_analyze_status(job_id: int, user: User = Depends(get_current_user)):
+    status = auto_analyze.get_status(user.id, job_id)
     if not status:
         raise HTTPException(status_code=404, detail="No analysis run for this job.")
     return status
@@ -333,8 +366,12 @@ def delete_found_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(DiscoveredJob).filter(DiscoveredJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.added_to_pipeline:
-        raise HTTPException(status_code=409, detail="Job is in pipeline — remove from pipeline first")
+    in_any_pipeline = (
+        db.query(Job).filter(Job.ats_job_id == job.ats_job_id).first() is not None
+        if job.ats_job_id else False
+    )
+    if in_any_pipeline:
+        raise HTTPException(status_code=409, detail="Job is in a pipeline — remove from pipeline first")
     db.delete(job)
     db.commit()
     return {"deleted": True}

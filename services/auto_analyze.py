@@ -12,30 +12,34 @@ from ai.tailor import tailor_resume
 from database import DiscoveredJob, Job, Resume, SessionLocal, load_settings
 from services.resume_builder import build_resume_files, flatten_resume, record_generation
 
-# discovered_job_id -> {stage, detail, ...result fields}
-_status: dict[int, dict] = {}
+# (user_id, discovered_job_id) -> {stage, detail, ...result fields}
+_status: dict[tuple[int, int], dict] = {}
 
 STAGES = ("promoting", "scoring", "tailoring", "generating")
 
 
-def get_status(discovered_id: int) -> dict | None:
-    return _status.get(discovered_id)
+def get_status(user_id: int, discovered_id: int) -> dict | None:
+    return _status.get((user_id, discovered_id))
 
 
-def is_running(discovered_id: int) -> bool:
-    s = _status.get(discovered_id)
+def is_running(user_id: int, discovered_id: int) -> bool:
+    s = _status.get((user_id, discovered_id))
     return bool(s) and s["stage"] in STAGES
 
 
-def promote_discovered(db, discovered: DiscoveredJob) -> Job:
-    """Copy a discovered job into the pipeline (idempotent)."""
-    if discovered.added_to_pipeline and discovered.pipeline_job_id:
-        existing = db.query(Job).filter(Job.id == discovered.pipeline_job_id).first()
-        if existing:
-            return existing
+def promote_discovered(db, discovered: DiscoveredJob, user_id: int) -> Job:
+    """Copy a discovered job into the user's pipeline (idempotent per user)."""
+    existing = (
+        db.query(Job)
+        .filter(Job.user_id == user_id, Job.ats_job_id == discovered.ats_job_id)
+        .first()
+    )
+    if existing:
+        return existing
 
     jd_text = discovered.parsed_summary or discovered.raw_description or ""
     job = Job(
+        user_id=user_id,
         title=discovered.title,
         company=discovered.company,
         jd_text=jd_text,
@@ -53,10 +57,6 @@ def promote_discovered(db, discovered: DiscoveredJob) -> Job:
     db.add(job)
     db.commit()
     db.refresh(job)
-
-    discovered.added_to_pipeline = True
-    discovered.pipeline_job_id = job.id
-    db.commit()
     return job
 
 
@@ -67,18 +67,18 @@ def _tailor_threshold() -> int:
         return 70
 
 
-async def run_auto_analyze(discovered_id: int, resume_id: int) -> None:
+async def run_auto_analyze(discovered_id: int, resume_id: int, user_id: int) -> None:
     status = {"stage": "promoting", "detail": "Adding to pipeline…", "started_at": datetime.utcnow().isoformat()}
-    _status[discovered_id] = status
+    _status[(user_id, discovered_id)] = status
     db = SessionLocal()
     try:
         discovered = db.query(DiscoveredJob).filter(DiscoveredJob.id == discovered_id).first()
-        resume = db.query(Resume).filter(Resume.id == resume_id).first()
+        resume = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == user_id).first()
         if not discovered or not resume:
             status.update(stage="error", detail="Job or resume not found.")
             return
 
-        job = promote_discovered(db, discovered)
+        job = promote_discovered(db, discovered, user_id)
         if not job.jd_text:
             status.update(stage="error", detail="This job has no description to score against.")
             return
