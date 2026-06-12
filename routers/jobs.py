@@ -53,15 +53,37 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @router.get("/generated/list")
 def list_generated(db: Session = Depends(get_db)):
-    jobs = (
+    from database import GeneratedResume
+    rows = (
+        db.query(GeneratedResume, Job)
+        .join(Job, Job.id == GeneratedResume.job_id)
+        .order_by(GeneratedResume.created_at.desc())
+        .all()
+    )
+    history = [
+        {
+            "id": f"g{g.id}",
+            "title": j.title,
+            "company": j.company,
+            "stage": j.stage,
+            "fit_score": g.fit_score if g.fit_score is not None else j.fit_score,
+            "updated_at": g.created_at,
+            "pdf_url": f"/analysis/download-generated/{g.id}?fmt=pdf" if g.pdf_path else None,
+            "docx_url": f"/analysis/download-generated/{g.id}?fmt=docx" if g.docx_path else None,
+        }
+        for g, j in rows
+    ]
+    # Legacy: jobs generated before history tracking existed
+    tracked_job_ids = {g.job_id for g, _ in rows}
+    legacy = (
         db.query(Job)
-        .filter(Job.generated_pdf_path.isnot(None))
+        .filter(Job.generated_pdf_path.isnot(None), ~Job.id.in_(tracked_job_ids))
         .order_by(Job.updated_at.desc())
         .all()
     )
-    return [
+    history += [
         {
-            "id": j.id,
+            "id": f"j{j.id}",
             "title": j.title,
             "company": j.company,
             "stage": j.stage,
@@ -70,8 +92,9 @@ def list_generated(db: Session = Depends(get_db)):
             "pdf_url": f"/analysis/download-resume-pdf/{j.id}",
             "docx_url": f"/analysis/download-resume/{j.id}" if j.generated_resume_path else None,
         }
-        for j in jobs
+        for j in legacy
     ]
+    return history
 
 
 @router.get("/{job_id}")

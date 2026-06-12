@@ -581,6 +581,8 @@
                       :disabled="job.added_to_pipeline"
                       x-text="job.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
                     </button>
+                    <button class="btn btn-sm btn-ghost" style="color:#fbbf24; border-color:#5c4a10;"
+                      @click="openAutoAnalyze(job)">⚡ Analyze</button>
                   </div>
                 </div>
               </template>
@@ -644,6 +646,77 @@
               :disabled="foundJobs.selected?.added_to_pipeline"
               x-text="foundJobs.selected?.added_to_pipeline ? '✓ In Pipeline' : '+ Add to Pipeline'">
             </button>
+            <button class="btn btn-sm btn-ghost" style="color:#fbbf24; border-color:#5c4a10;"
+              @click="openAutoAnalyze(foundJobs.selected)">⚡ Analyze</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-analyze modal -->
+      <div x-show="foundJobs.autoTarget" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:150;display:flex;align-items:center;justify-content:center;padding:24px;"
+           @click.self="closeAutoAnalyze()">
+        <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:16px;padding:28px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;" x-show="foundJobs.autoTarget">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <div style="font-size:16px;font-weight:700;color:#f1f5f9;">⚡ Auto-Analyze</div>
+              <div style="font-size:13px;color:#818cf8;margin-top:4px;"
+                   x-text="(foundJobs.autoTarget?.title || '') + ' — ' + (foundJobs.autoTarget?.company || '')"></div>
+            </div>
+            <button @click="closeAutoAnalyze()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+          </div>
+
+          <!-- Setup -->
+          <div x-show="!foundJobs.autoStatus">
+            <p class="text-sm text-muted mb-3">
+              Adds this job to your pipeline, scores it against your resume, and — if it scores
+              <strong x-text="settings.auto_tailor_min_score ?? 70"></strong>+ — tailors and generates a resume automatically.
+            </p>
+            <div class="form-row">
+              <label>Resume</label>
+              <select x-model="foundJobs.autoResumeId">
+                <template x-for="r in resumes" :key="r.id">
+                  <option :value="r.id" x-text="r.filename"></option>
+                </template>
+              </select>
+            </div>
+            <button class="btn btn-primary" @click="startAutoAnalyze()" :disabled="!foundJobs.autoResumeId || foundJobs.autoStarting">
+              <span x-show="!foundJobs.autoStarting">⚡ Run</span>
+              <span x-show="foundJobs.autoStarting" class="loading"><span class="spinner"></span> Starting…</span>
+            </button>
+          </div>
+
+          <!-- Progress / result -->
+          <div x-show="foundJobs.autoStatus">
+            <div class="mb-3">
+              <template x-for="step in [['promoting','Add to pipeline'],['scoring','Score fit'],['tailoring','Tailor bullets'],['generating','Generate resume']]" :key="step[0]">
+                <div style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;"
+                     :style="autoStepState(step[0]) === 'pending' ? 'color:#475569;' : 'color:#e2e8f0;'">
+                  <span x-show="autoStepState(step[0]) === 'done'" style="color:#34d399;">✓</span>
+                  <span x-show="autoStepState(step[0]) === 'active'" class="spinner" style="width:13px;height:13px;"></span>
+                  <span x-show="autoStepState(step[0]) === 'pending'">○</span>
+                  <span x-show="autoStepState(step[0]) === 'skipped'" style="color:#64748b;">–</span>
+                  <span x-text="step[1]"></span>
+                </div>
+              </template>
+            </div>
+
+            <div x-show="foundJobs.autoStatus?.score !== undefined" class="mb-3" style="display:flex;align-items:center;gap:14px;">
+              <div class="score-ring" :class="scoreClass(foundJobs.autoStatus?.score)" style="width:64px;height:64px;font-size:18px;margin:0;">
+                <span x-text="foundJobs.autoStatus?.score"></span>
+              </div>
+              <span class="badge" :class="recClass(foundJobs.autoStatus?.recommendation)" x-text="recLabel(foundJobs.autoStatus?.recommendation)"></span>
+            </div>
+
+            <p class="text-sm mb-3"
+               :style="foundJobs.autoStatus?.stage === 'error' ? 'color:#f87171;' : 'color:#94a3b8;'"
+               x-text="foundJobs.autoStatus?.detail"></p>
+
+            <div class="flex gap-2" x-show="['done','skipped','error'].includes(foundJobs.autoStatus?.stage)">
+              <a x-show="foundJobs.autoStatus?.docx_url" :href="foundJobs.autoStatus?.docx_url" class="btn btn-sm btn-ghost" style="color:#34d399; border-color:#166534;" download>📄 DOCX</a>
+              <a x-show="foundJobs.autoStatus?.pdf_url" :href="foundJobs.autoStatus?.pdf_url" class="btn btn-sm btn-ghost" style="color:#34d399; border-color:#166534;" download>📕 PDF</a>
+              <button x-show="foundJobs.autoStatus?.pipeline_job_id" class="btn btn-sm btn-ghost" @click="openAutoAnalyzedJob()">📋 View in Pipeline</button>
+              <button class="btn btn-sm btn-ghost" @click="closeAutoAnalyze()">Close</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1441,6 +1514,19 @@
                   </template>
                 </ul>
               </div>
+              <div x-show="selectedJobResumes.length > 0" class="mt-3">
+                <div class="section-title">📄 Generated Resumes</div>
+                <template x-for="r in selectedJobResumes" :key="r.id">
+                  <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e2235;font-size:12px;">
+                    <span style="color:#94a3b8;" x-text="r.created_at ? new Date(r.created_at + 'Z').toLocaleString() : ''"></span>
+                    <span x-show="r.fit_score !== null" class="badge" :class="scoreClass(r.fit_score)" x-text="r.fit_score"></span>
+                    <span style="margin-left:auto;display:flex;gap:6px;">
+                      <a x-show="r.docx_url" :href="r.docx_url" download style="color:#34d399;">DOCX</a>
+                      <a x-show="r.pdf_url" :href="r.pdf_url" download style="color:#34d399;">PDF</a>
+                    </span>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </div>
@@ -1899,6 +1985,16 @@
           </div>
         </div>
 
+        <!-- Auto-Analyze -->
+        <div class="card">
+          <div class="section-title" style="margin-bottom:6px;">⚡ Auto-Analyze</div>
+          <div class="text-muted text-xs mb-3">When you auto-analyze a found job, a tailored resume is only generated if the fit score reaches this threshold.</div>
+          <div class="form-row" style="margin-bottom:0;">
+            <label>Minimum score to auto-tailor</label>
+            <input type="number" x-model.number="settings.auto_tailor_min_score" min="0" max="100" style="width:80px;">
+          </div>
+        </div>
+
         <!-- Active Config Summary -->
         <div class="card" style="font-size:12px;">
           <div class="section-title" style="margin-bottom:10px;">📋 Active Configuration</div>
@@ -1954,6 +2050,7 @@ function app() {
 
     // Pipeline
     selectedJob: null,
+    selectedJobResumes: [],
     pendingJd: '',
     generatingEmail: false,
     followupEmail: '',
@@ -2000,6 +2097,12 @@ function app() {
       editTestResult: null,
       editTesting: false,
       editSaving: false,
+      // Auto-analyze
+      autoTarget: null,
+      autoStatus: null,
+      autoResumeId: '',
+      autoStarting: false,
+      autoPollTimer: null,
     },
 
     // Zero-result companies report (RCA helper on the Analytics page)
@@ -2021,6 +2124,7 @@ function app() {
       slack_webhook_url:    '',
       alert_keywords:       ['forward deployed', 'forward-deployed', 'fde'],
       check_interval_hours: 2,
+      auto_tailor_min_score: 70,
       newAlertKw:           '',
       testJd: 'We are looking for a Senior Software Engineer with 5+ years of Python and distributed systems experience. You will design scalable APIs, lead code reviews, and mentor junior engineers. Compensation: $150k–$190k base + equity. Must have strong AWS/GCP, Docker/Kubernetes, and CI/CD experience.',
       testParsing:    false,
@@ -2466,6 +2570,92 @@ function app() {
       this.showToast('Added to pipeline!');
     },
 
+    async openAutoAnalyze(job) {
+      if (!this.resumes.length) await this.loadResumes();
+      this.foundJobs.autoTarget = job;
+      this.foundJobs.autoStatus = null;
+      this.foundJobs.autoResumeId = this.analyze.resumeId || this.resumes[0]?.id || '';
+      if (!this.foundJobs.autoResumeId) {
+        this.showToast('Upload a resume first (Resume tab).');
+        this.foundJobs.autoTarget = null;
+      }
+    },
+
+    closeAutoAnalyze() {
+      clearTimeout(this.foundJobs.autoPollTimer);
+      this.foundJobs.autoTarget = null;
+      this.foundJobs.autoStatus = null;
+    },
+
+    async startAutoAnalyze() {
+      const job = this.foundJobs.autoTarget;
+      if (!job) return;
+      this.foundJobs.autoStarting = true;
+      try {
+        const res = await fetch(`/found-jobs/${job.id}/auto-analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resume_id: parseInt(this.foundJobs.autoResumeId) }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to start analysis');
+        }
+        this.foundJobs.autoStatus = { stage: 'promoting', detail: 'Starting…' };
+        this.pollAutoAnalyze(job.id);
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+      this.foundJobs.autoStarting = false;
+    },
+
+    async pollAutoAnalyze(jobId) {
+      try {
+        const res = await fetch(`/found-jobs/${jobId}/auto-analyze`);
+        if (res.ok) {
+          const status = await res.json();
+          this.foundJobs.autoStatus = status;
+          if (['done', 'skipped', 'error'].includes(status.stage)) {
+            // Job is now in the pipeline — refresh both views
+            const target = this.foundJobs.autoTarget;
+            if (target && status.pipeline_job_id) {
+              target.added_to_pipeline = true;
+              target.pipeline_job_id = status.pipeline_job_id;
+            }
+            await this.loadJobs();
+            return;
+          }
+        }
+      } catch (e) { /* transient poll failure — keep trying */ }
+      this.foundJobs.autoPollTimer = setTimeout(() => this.pollAutoAnalyze(jobId), 2000);
+    },
+
+    autoStepState(step) {
+      const s = this.foundJobs.autoStatus;
+      if (!s) return 'pending';
+      const order = ['promoting', 'scoring', 'tailoring', 'generating'];
+      const idx = order.indexOf(step);
+      if (s.stage === 'done') return 'done';
+      if (s.stage === 'skipped' || s.stage === 'error') {
+        // Everything before the point we stopped is done; the rest never ran
+        const reached = s.score !== undefined ? 2 : 1;
+        return idx < reached ? 'done' : 'skipped';
+      }
+      const cur = order.indexOf(s.stage);
+      if (idx < cur) return 'done';
+      if (idx === cur) return 'active';
+      return 'pending';
+    },
+
+    openAutoAnalyzedJob() {
+      const id = this.foundJobs.autoStatus?.pipeline_job_id;
+      if (!id) return;
+      this.closeAutoAnalyze();
+      this.foundJobs.selected = null;
+      const j = this.jobs.find(j => j.id === id);
+      if (j) { this.page = 'pipeline'; this.$nextTick(() => this.openJob(j)); }
+    },
+
     async reparseFoundJob(job) {
       const res = await fetch(`/found-jobs/${job.id}/reparse`, { method: 'POST' });
       if (!res.ok) { this.showToast('Re-parse failed'); return; }
@@ -2807,6 +2997,15 @@ function app() {
       this.selectedJob = { ...job };
       this.pendingJd = '';
       this.followupEmail = '';
+      this.loadJobResumes(job.id);
+    },
+
+    async loadJobResumes(jobId) {
+      this.selectedJobResumes = [];
+      try {
+        const res = await fetch(`/analysis/generated/${jobId}`);
+        if (res.ok) this.selectedJobResumes = await res.json();
+      } catch (e) { /* non-fatal */ }
     },
 
     loadIntoAnalyzer(job) {
@@ -3013,6 +3212,7 @@ function app() {
         this.settings.slack_webhook_url    = d.slack_webhook_url    || '';
         this.settings.alert_keywords       = Array.isArray(d.alert_keywords) ? d.alert_keywords : ['forward deployed', 'forward-deployed', 'fde'];
         this.settings.check_interval_hours = d.check_interval_hours || 2;
+        this.settings.auto_tailor_min_score = d.auto_tailor_min_score ?? 70;
         this.settingsMsg = '';
         this.loadOllamaModels();
       } catch(e) {
@@ -3051,6 +3251,7 @@ function app() {
             slack_webhook_url:    this.settings.slack_webhook_url,
             alert_keywords:       this.settings.alert_keywords,
             check_interval_hours: this.settings.check_interval_hours,
+            auto_tailor_min_score: this.settings.auto_tailor_min_score,
           }),
         });
         if (!r.ok) {

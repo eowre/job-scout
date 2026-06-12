@@ -1,11 +1,4 @@
-import json
-import anthropic
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+from ai.client import complete_json
 
 STRUCTURE_PROMPT = """You are a resume parser and editor. You will be given:
 1. The original resume as raw text
@@ -76,17 +69,4 @@ async def structure_resume(resume_text: str, accepted: list, denied: list) -> di
         denied_bullets=denied_lines,
     )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    return json.loads(raw)
+    return await complete_json(prompt, max_tokens=4096)

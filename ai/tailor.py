@@ -1,11 +1,4 @@
-import json
-import anthropic
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+from ai.client import complete_json
 
 TAILOR_PROMPT = """You are an expert resume writer. Your job is to tailor resume bullets to better match a job description, without fabricating experience.
 
@@ -107,20 +100,7 @@ async def retailor_bullet(original: str, previous_tailored: str, jd_text: str, u
         user_context=user_context
     )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    return json.loads(raw)
+    return await complete_json(prompt, max_tokens=512)
 
 
 async def tailor_resume(resume_text: str, jd_text: str, gaps: list, missing_keywords: list, gap_contexts: list = None) -> dict:
@@ -140,18 +120,4 @@ async def tailor_resume(resume_text: str, jd_text: str, gaps: list, missing_keyw
         gap_context_section=gap_context_section
     )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    raw = message.content[0].text.strip()
-
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    return json.loads(raw)
+    return await complete_json(prompt, max_tokens=2048)

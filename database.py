@@ -76,6 +76,20 @@ class DiscoveredJob(Base):
     discovered_at = Column(DateTime, default=datetime.utcnow)
 
 
+class GeneratedResume(Base):
+    """Every tailored resume file generated for a pipeline job. Kept forever
+    so a job card can show its full generation history."""
+    __tablename__ = "generated_resumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, nullable=False, index=True)
+    resume_id = Column(Integer, nullable=True)   # source (master) resume
+    docx_path = Column(String, nullable=True)
+    pdf_path = Column(String, nullable=True)
+    fit_score = Column(Float, nullable=True)     # score at generation time
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ScrapeRun(Base):
     __tablename__ = "scrape_runs"
 
@@ -123,6 +137,8 @@ _SETTING_DEFAULTS = {
     "alert_keywords": '["forward deployed", "forward-deployed", "fde"]',
     # Scrape schedule
     "check_interval_hours": "2",
+    # Auto-analyze: minimum fit score before a tailored resume is generated
+    "auto_tailor_min_score": "70",
 }
 
 
